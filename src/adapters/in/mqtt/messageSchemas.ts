@@ -1,8 +1,13 @@
 import { z } from "zod";
 
-// Espejo en Zod de contract.ts / contract.schema.json (v1.0.0), acotado a
+// Espejo en Zod de contract.ts / contract.schema.json (v1.1.0), acotado a
 // los mensajes que este suscriptor procesa. Si el contrato sube de
 // versión, actualizar aquí también.
+
+// Cualquier 1.x.x, no el literal exacto de la versión actual: un bump de
+// minor debe ser compatible con clientes que sigan en una versión
+// anterior de 1.x (ver CHANGELOG.md del contrato).
+const contractVersionSchema = z.string().regex(/^1\.\d+\.\d+$/, "contractVersion debe ser 1.x.x");
 
 const vector3Schema = z.object({
   x: z.number(),
@@ -18,7 +23,7 @@ const gpsReadingSchema = z.object({
 });
 
 export const telemetryMessageSchema = z.object({
-  contractVersion: z.literal("1.0.0"),
+  contractVersion: contractVersionSchema,
   msgId: z.string().uuid(),
   nodeId: z.string().min(1),
   unitId: z.string().min(1),
@@ -28,6 +33,8 @@ export const telemetryMessageSchema = z.object({
   type: z.literal("telemetry"),
   accel: vector3Schema.optional(),
   gyro: vector3Schema.optional(),
+  // Lectura cruda en µT, no un rumbo/brújula (v1.1.0 del contrato).
+  mag: vector3Schema.optional(),
   lux: z.number().optional(),
   pressureHpa: z.number().optional(),
   gps: gpsReadingSchema.optional(),
@@ -36,7 +43,7 @@ export const telemetryMessageSchema = z.object({
 export type ValidatedTelemetryMessage = z.infer<typeof telemetryMessageSchema>;
 
 export const heartbeatMessageSchema = z.object({
-  contractVersion: z.literal("1.0.0"),
+  contractVersion: contractVersionSchema,
   msgId: z.string().uuid(),
   nodeId: z.string().min(1),
   unitId: z.string().min(1),
@@ -59,7 +66,7 @@ const gpsCoordsSchema = z.object({
 });
 
 export const eventMessageSchema = z.object({
-  contractVersion: z.literal("1.0.0"),
+  contractVersion: contractVersionSchema,
   msgId: z.string().uuid(),
   nodeId: z.string().min(1),
   unitId: z.string().min(1),

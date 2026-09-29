@@ -20,6 +20,7 @@ export function registerTelemetryRoutes(app: FastifyInstance, pool: Pool): void 
       `SELECT t.id, t.msg_id, n.node_code, t.seq, t.ts, t.received_at,
               t.accel_x, t.accel_y, t.accel_z,
               t.gyro_x, t.gyro_y, t.gyro_z,
+              t.mag_x, t.mag_y, t.mag_z,
               t.lux, t.pressure_hpa,
               t.gps_lat, t.gps_lon, t.gps_speed_ms, t.gps_accuracy_m
          FROM telemetry t

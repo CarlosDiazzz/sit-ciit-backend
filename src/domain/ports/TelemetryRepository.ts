@@ -12,6 +12,8 @@ export interface TelemetryReading {
   receivedAt: Date;
   accel?: { x: number; y: number; z: number };
   gyro?: { x: number; y: number; z: number };
+  /** microtesla (µT), lectura cruda del magnetómetro — no un rumbo. */
+  mag?: { x: number; y: number; z: number };
   lux?: number;
   pressureHpa?: number;
   gps?: { lat: number; lon: number; speedMs?: number; accuracyM?: number };

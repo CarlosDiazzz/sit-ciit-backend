@@ -22,9 +22,10 @@ export class PgTelemetryRepository implements TelemetryRepository {
            msg_id, node_id, seq, ts, received_at,
            accel_x, accel_y, accel_z,
            gyro_x, gyro_y, gyro_z,
+           mag_x, mag_y, mag_z,
            lux, pressure_hpa,
            gps_lat, gps_lon, gps_speed_ms, gps_accuracy_m
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
          ON CONFLICT (msg_id, ts) DO NOTHING
          RETURNING id`,
         [
@@ -39,6 +40,9 @@ export class PgTelemetryRepository implements TelemetryRepository {
           reading.gyro?.x ?? null,
           reading.gyro?.y ?? null,
           reading.gyro?.z ?? null,
+          reading.mag?.x ?? null,
+          reading.mag?.y ?? null,
+          reading.mag?.z ?? null,
           reading.lux ?? null,
           reading.pressureHpa ?? null,
           reading.gps?.lat ?? null,
