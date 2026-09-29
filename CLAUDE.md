@@ -55,6 +55,25 @@ Puntos que no son obvios leyendo solo el DDL:
 - `events.unit_id` se guarda explícito (no solo vía `node_id`) porque
   `node_id` es NULL en `source_failover`/`sensor_disagreement`.
 
+## Ingesta de telemetría (Fase 1, ya implementada)
+
+`src/adapters/in/mqtt/TelemetrySubscriber.ts` se suscribe a
+`sitciit/+/telemetry`, valida con Zod (`messageSchemas.ts`, espejo del
+contrato) y llama a `application/ingestTelemetry.ts`, que delega en
+`PgTelemetryRepository` (`adapters/out/postgres`).
+
+Puntos no obvios:
+- **No hay endpoint de alta de nodos.** El contrato no define uno, así
+  que `PgTelemetryRepository.ensureNode()` da de alta `units`/`nodes` por
+  upsert (`ON CONFLICT ... DO UPDATE`) en el primer mensaje que ve de un
+  `nodeId`/`unitId` nuevo. Si esto cambia (ej. se agrega un flujo de
+  aprovisionamiento explícito), quitar el auto-registro de aquí.
+- **Dedup real**: `ON CONFLICT (msg_id, ts) DO NOTHING` en el insert de
+  `telemetry` — reintentos QoS 1 del mismo mensaje no generan filas
+  duplicadas. Verificado manualmente reenviando el mismo `msgId`.
+- Mensajes que no pasan Zod o que no son JSON válido se descartan con un
+  `logger.warn` (no tumban el proceso ni la conexión MQTT).
+
 ## Reglas de dominio a implementar (ver fases)
 
 - Nodo sin heartbeat en 15 s → offline.

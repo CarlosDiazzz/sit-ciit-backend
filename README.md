@@ -42,7 +42,8 @@ repo, elegido para no chocar con un Postgres nativo del sistema).
 
 ## Estado
 
-Fase 0 (andamiaje): solo existe `GET /health`. El resto de los endpoints,
-el suscriptor MQTT, migraciones y módulos de dominio se agregan en las
-fases siguientes (ver `CLAUDE.md` del repo `sit-ciit-infra` para el plan
-de fases completo).
+Fase 1 (en progreso): suscriptor MQTT (`sitciit/+/telemetry`) que valida
+con Zod, da de alta unit/node automáticamente en el primer mensaje que ve
+de ellos, deduplica por `msgId` y guarda en la hypertable `telemetry`.
+`GET /telemetry?unitId&from&to` para consultarla. `GET /health` sigue
+disponible. Falta: Socket.IO hacia el dashboard, eventos, comandos, auth.
