@@ -1,11 +1,11 @@
-import type { Pool, PoolClient } from "pg";
+import type { Pool } from "pg";
 
 import type {
-  NodeRef,
   SaveTelemetryResult,
   TelemetryReading,
   TelemetryRepository,
 } from "../../../domain/ports/TelemetryRepository.js";
+import { ensureNode } from "./ensureNode.js";
 
 export class PgTelemetryRepository implements TelemetryRepository {
   constructor(private readonly pool: Pool) {}
@@ -15,7 +15,7 @@ export class PgTelemetryRepository implements TelemetryRepository {
     try {
       await client.query("BEGIN");
 
-      const nodeId = await this.ensureNode(client, reading.node);
+      const nodeId = await ensureNode(client, reading.node);
 
       const { rows } = await client.query(
         `INSERT INTO telemetry (
@@ -48,10 +48,10 @@ export class PgTelemetryRepository implements TelemetryRepository {
         ]
       );
 
-      await client.query(
-        `UPDATE nodes SET is_online = true, last_heartbeat_at = now() WHERE id = $1`,
-        [nodeId]
-      );
+      // La liveness (is_online/last_heartbeat_at) ya no se toca aquí desde
+      // que existe el heartbeat real (Fase 5, PgNodeStateRepository): que
+      // telemetry siga llegando no prueba que el nodo esté sano si el
+      // heartbeat dejó de publicarse, y antes esto podía tapar esa falla.
 
       await client.query("COMMIT");
       return { inserted: rows.length > 0 };
@@ -61,28 +61,5 @@ export class PgTelemetryRepository implements TelemetryRepository {
     } finally {
       client.release();
     }
-  }
-
-  /**
-   * Da de alta unit/node en el primer mensaje que se ve de ellos (los nodos
-   * no se registran por separado — el contrato no define un endpoint de
-   * alta, así que la primera telemetry/evento/heartbeat "matricula" al nodo).
-   */
-  private async ensureNode(client: PoolClient, node: NodeRef): Promise<string> {
-    const unitResult = await client.query<{ id: string }>(
-      `INSERT INTO units (unit_code) VALUES ($1)
-       ON CONFLICT (unit_code) DO UPDATE SET unit_code = units.unit_code
-       RETURNING id`,
-      [node.unitCode]
-    );
-    const unitId = unitResult.rows[0].id;
-
-    const nodeResult = await client.query<{ id: string }>(
-      `INSERT INTO nodes (node_code, unit_id, role) VALUES ($1, $2, $3)
-       ON CONFLICT (node_code) DO UPDATE SET unit_id = EXCLUDED.unit_id
-       RETURNING id`,
-      [node.nodeCode, unitId, node.role]
-    );
-    return nodeResult.rows[0].id;
   }
 }

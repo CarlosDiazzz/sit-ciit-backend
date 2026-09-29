@@ -32,6 +32,12 @@ export function startTelemetrySubscriber(
   });
 
   client.on("message", (topic, payload) => {
+    // El cliente MQTT ahora es compartido (heartbeat y event se
+    // engancharon al mismo, ver ADR 0002): sin este filtro, este listener
+    // también intenta parsear sus mensajes como telemetry y los descarta
+    // con un warning de "no cumple el contrato" — ruidoso, no incorrecto,
+    // pero innecesario.
+    if (!topic.endsWith("/telemetry")) return;
     void handleMessage(topic, payload);
   });
 

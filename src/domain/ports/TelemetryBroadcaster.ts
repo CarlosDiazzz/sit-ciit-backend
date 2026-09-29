@@ -32,8 +32,22 @@ export interface ActiveNodePayload {
   reason: "failover" | "recovered" | "no_nodes_online";
 }
 
+/** Evento detectado en el borde (impact/door/rollover/threshold_exceeded),
+ *  ya guardado — se reemite para que el dashboard lo muestre sin recargar. */
+export interface EventPayload {
+  unitId: string;
+  nodeId: string;
+  kind: string;
+  severity: "info" | "warning" | "critical";
+  value?: number;
+  threshold?: number;
+  gps?: { lat: number; lon: number };
+  ts: number;
+}
+
 /** Avisos en vivo hacia el dashboard que no son telemetría. */
 export interface StatusBroadcaster {
   nodeStatus(payload: NodeStatusPayload): void;
   activeNode(payload: ActiveNodePayload): void;
+  event(payload: EventPayload): void;
 }

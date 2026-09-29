@@ -52,3 +52,26 @@ export const heartbeatMessageSchema = z.object({
 });
 
 export type ValidatedHeartbeatMessage = z.infer<typeof heartbeatMessageSchema>;
+
+const gpsCoordsSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+});
+
+export const eventMessageSchema = z.object({
+  contractVersion: z.literal("1.0.0"),
+  msgId: z.string().uuid(),
+  nodeId: z.string().min(1),
+  unitId: z.string().min(1),
+  role: z.enum(["primary", "backup"]),
+  seq: z.number().int().min(0),
+  ts: z.number().int().min(0),
+  type: z.literal("event"),
+  kind: z.enum(["impact", "door_open", "door_closed", "rollover", "threshold_exceeded"]),
+  severity: z.enum(["info", "warning", "critical"]),
+  value: z.number().optional(),
+  threshold: z.number().optional(),
+  gps: gpsCoordsSchema.optional(),
+});
+
+export type ValidatedEventMessage = z.infer<typeof eventMessageSchema>;
