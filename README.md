@@ -45,5 +45,7 @@ repo, elegido para no chocar con un Postgres nativo del sistema).
 Fase 1 (en progreso): suscriptor MQTT (`sitciit/+/telemetry`) que valida
 con Zod, da de alta unit/node automáticamente en el primer mensaje que ve
 de ellos, deduplica por `msgId` y guarda en la hypertable `telemetry`.
-`GET /telemetry?unitId&from&to` para consultarla. `GET /health` sigue
-disponible. Falta: Socket.IO hacia el dashboard, eventos, comandos, auth.
+`GET /telemetry?unitId&from&to` para consultarla. Cada telemetría guardada
+con éxito se reemite por Socket.IO (evento `telemetry`) para que el
+dashboard la grafique en vivo. `GET /health` sigue disponible. Falta:
+eventos, comandos, auth.

@@ -73,6 +73,11 @@ Puntos no obvios:
   duplicadas. Verificado manualmente reenviando el mismo `msgId`.
 - Mensajes que no pasan Zod o que no son JSON válido se descartan con un
   `logger.warn` (no tumban el proceso ni la conexión MQTT).
+- Cada telemetría guardada con éxito (no duplicada) se reemite por
+  Socket.IO (`adapters/in/ws/SocketTelemetryBroadcaster`, evento
+  `telemetry`) para que el dashboard grafique en vivo. CORS del socket
+  está abierto (`origin: "*"`) porque todavía no hay auth — restringir
+  cuando se agregue login al dashboard (Fase 6).
 
 ## Reglas de dominio a implementar (ver fases)
 
