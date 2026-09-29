@@ -79,12 +79,40 @@ Puntos no obvios:
   está abierto (`origin: "*"`) porque todavía no hay auth — restringir
   cuando se agregue login al dashboard (Fase 6).
 
+## Heartbeat y failover (ya implementado)
+
+`adapters/in/mqtt/HeartbeatSubscriber.ts` se engancha al **mismo** cliente
+MQTT del suscriptor de telemetría (un solo clientId por proceso: el broker
+desconecta duplicados, ADR 0002) y se suscribe a `sitciit/+/heartbeat`.
+`application/ingestHeartbeat.ts` guarda el estado en `nodes` y, si el nodo
+estaba dado por caído, gestiona su regreso.
+
+La caída no genera ningún mensaje, así que hay que ir a buscarla:
+`adapters/in/scheduler/livenessWatcher.ts` llama cada 5 s a
+`application/evaluateLiveness.ts`, que marca offline a los nodos sin
+heartbeat en 15 s (`OFFLINE_AFTER_MS`) y reasigna la fuente activa.
+
+Puntos no obvios:
+- Varias caídas en la misma unidad se resuelven en una sola pasada: al
+  procesarlas por separado, la primera reasignaría la fuente a un nodo que
+  la segunda va a tumbar enseguida.
+- Las `capabilities` se reemplazan enteras en cada heartbeat: la lista es
+  la de sensores disponibles *ahora*, y uno puede dejar de estarlo.
+- El intervalo del vigilante (5 s) es más fino que el umbral (15 s) para
+  que la detección no se retrase hasta 30 s.
+- `source_failover` se guarda con `node_id` NULL (es de la unidad) y
+  severidad `warning` al caer a backup, `info` al volver el primary, y
+  `critical` si ningún nodo queda vivo.
+- Socket.IO emite `node:status` y `unit:active-node` para que el dashboard
+  refleje el cambio sin recargar.
+
 ## Reglas de dominio a implementar (ver fases)
 
-- Nodo sin heartbeat en 15 s → offline.
+- Nodo sin heartbeat en 15 s → offline. **(hecho, ver arriba)**
 - Si `primary` cae y `backup` de la misma unidad está online → fuente
   activa pasa a backup, se registra evento `source_failover`, se notifica
   por WebSocket. Al volver `primary`, la fuente regresa y se registra.
+  **(hecho, ver arriba)**
 - Si `primary` y `backup` están ambos online y uno reporta `impact`
   critical sin que el otro registre algo similar en ±3 s → evento
   `sensor_disagreement` (warning). Nota: `source_failover` y

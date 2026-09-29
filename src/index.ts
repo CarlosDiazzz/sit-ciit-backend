@@ -3,10 +3,16 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { Pool } from "pg";
 
+import { makeEvaluateLiveness } from "./application/evaluateLiveness.js";
+import { makeIngestHeartbeat } from "./application/ingestHeartbeat.js";
 import { makeIngestTelemetry } from "./application/ingestTelemetry.js";
 import { PgTelemetryRepository } from "./adapters/out/postgres/PgTelemetryRepository.js";
 import { PgUnitRepository } from "./adapters/out/postgres/PgUnitRepository.js";
+import { PgNodeStateRepository } from "./adapters/out/postgres/PgNodeStateRepository.js";
+import { PgEventRepository } from "./adapters/out/postgres/PgEventRepository.js";
 import { startTelemetrySubscriber } from "./adapters/in/mqtt/TelemetrySubscriber.js";
+import { attachHeartbeatSubscriber } from "./adapters/in/mqtt/HeartbeatSubscriber.js";
+import { startLivenessWatcher } from "./adapters/in/scheduler/livenessWatcher.js";
 import { registerTelemetryRoutes } from "./adapters/in/http/telemetryRoutes.js";
 import { registerUnitRoutes } from "./adapters/in/http/unitRoutes.js";
 import { SocketTelemetryBroadcaster } from "./adapters/in/ws/SocketTelemetryBroadcaster.js";
@@ -17,8 +23,22 @@ const pool = new Pool({ connectionString: requireEnv("DATABASE_URL") });
 
 const telemetryRepository = new PgTelemetryRepository(pool);
 const unitRepository = new PgUnitRepository(pool);
+const nodeStateRepository = new PgNodeStateRepository(pool);
+const eventRepository = new PgEventRepository(pool);
 const telemetryBroadcaster = new SocketTelemetryBroadcaster(app.server);
 const ingestTelemetry = makeIngestTelemetry(telemetryRepository, telemetryBroadcaster);
+const ingestHeartbeat = makeIngestHeartbeat(
+  nodeStateRepository,
+  eventRepository,
+  telemetryBroadcaster,
+  app.log
+);
+const evaluateLiveness = makeEvaluateLiveness(
+  nodeStateRepository,
+  eventRepository,
+  telemetryBroadcaster,
+  app.log
+);
 
 const mqttClient = startTelemetrySubscriber(
   {
@@ -36,6 +56,11 @@ const mqttClient = startTelemetrySubscriber(
 // agregarla, igual que en SocketTelemetryBroadcaster.
 await app.register(cors, { origin: true });
 
+// Un solo cliente MQTT por proceso: el broker desconecta clientIds
+// duplicados (ADR 0002 de sit-ciit-infra).
+attachHeartbeatSubscriber(mqttClient, ingestHeartbeat, app.log);
+const livenessTimer = startLivenessWatcher(evaluateLiveness, app.log);
+
 app.get("/health", async () => ({ status: "ok" }));
 registerTelemetryRoutes(app, pool);
 registerUnitRoutes(app, unitRepository);
@@ -49,6 +74,7 @@ app.listen({ port, host: "0.0.0.0" }).catch((err) => {
 
 async function shutdown() {
   app.log.info("apagando...");
+  clearInterval(livenessTimer);
   mqttClient.end(true);
   await pool.end();
   await app.close();

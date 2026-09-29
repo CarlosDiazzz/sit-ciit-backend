@@ -2,11 +2,14 @@ import type { Server as HttpServer } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
 
 import type {
+  ActiveNodePayload,
+  NodeStatusPayload,
+  StatusBroadcaster,
   TelemetryBroadcastPayload,
   TelemetryBroadcaster,
 } from "../../../domain/ports/TelemetryBroadcaster.js";
 
-export class SocketTelemetryBroadcaster implements TelemetryBroadcaster {
+export class SocketTelemetryBroadcaster implements TelemetryBroadcaster, StatusBroadcaster {
   private readonly io: SocketIOServer;
 
   constructor(httpServer: HttpServer) {
@@ -20,5 +23,13 @@ export class SocketTelemetryBroadcaster implements TelemetryBroadcaster {
 
   broadcast(payload: TelemetryBroadcastPayload): void {
     this.io.emit("telemetry", payload);
+  }
+
+  nodeStatus(payload: NodeStatusPayload): void {
+    this.io.emit("node:status", payload);
+  }
+
+  activeNode(payload: ActiveNodePayload): void {
+    this.io.emit("unit:active-node", payload);
   }
 }
