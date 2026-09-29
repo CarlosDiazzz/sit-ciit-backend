@@ -36,6 +36,25 @@ Repos hermanos: `sit-ciit-infra` (contrato, broker, BD), `sit-ciit-mobile`,
   servidor) — la diferencia es lo que el dashboard usa para marcar
   eventos que llegaron tarde por sincronización offline.
 
+## Base de datos
+
+Esquema en `migrations/0001_init.sql`, aplicado con `npm run migrate`
+(runner propio en `scripts/migrate.ts`, sin ORM — ver
+`docs/adr/0001-modelo-de-datos-3fn.md`). Diagrama ER y justificación de
+normalización (3FN) en `docs/schema.md` — leerlo antes de tocar el
+esquema o de escribir queries que crucen `nodes`/`units`/`events`.
+
+Puntos que no son obvios leyendo solo el DDL:
+- No hay tabla de heartbeats: el heartbeat solo actualiza el estado
+  actual en `nodes` (`last_heartbeat_at`, `battery_pct`, `pending_outbox`,
+  `sampling_ms`, `mode`, `is_online`).
+- `nodes.role` (primary/backup) y `users.role` (control_center/operator)
+  son conceptos distintos que solo comparten nombre de columna.
+- `commands.issued_by_role` es un snapshot histórico, no se actualiza si
+  el usuario cambia de rol después.
+- `events.unit_id` se guarda explícito (no solo vía `node_id`) porque
+  `node_id` es NULL en `source_failover`/`sensor_disagreement`.
+
 ## Reglas de dominio a implementar (ver fases)
 
 - Nodo sin heartbeat en 15 s → offline.

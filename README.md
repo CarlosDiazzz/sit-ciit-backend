@@ -20,6 +20,20 @@ npm run dev
 Ver [`src/README.md`](src/README.md) para el detalle de la arquitectura
 hexagonal (domain / application / adapters).
 
+## Base de datos
+
+Esquema normalizado a 3FN — diagrama ER y justificación completa en
+[`docs/schema.md`](docs/schema.md) (ver también
+[`docs/adr/0001-modelo-de-datos-3fn.md`](docs/adr/0001-modelo-de-datos-3fn.md)).
+
+```bash
+npm run migrate   # aplica migrations/*.sql en orden (idempotente)
+```
+
+Requiere `DATABASE_URL` apuntando al TimescaleDB de `sit-ciit-infra`
+(por defecto puerto **5433**, no 5432 — ver `POSTGRES_HOST_PORT` en ese
+repo, elegido para no chocar con un Postgres nativo del sistema).
+
 ## Contrato
 
 `src/contract/contract.ts` es una copia sincronizada desde
