@@ -74,7 +74,19 @@ export const eventMessageSchema = z.object({
   seq: z.number().int().min(0),
   ts: z.number().int().min(0),
   type: z.literal("event"),
-  kind: z.enum(["impact", "door_open", "door_closed", "rollover", "threshold_exceeded"]),
+  // Espejo de EventKind del contrato v1.2.0. Los cuatro ultimos son de
+  // dinamica de marcha y reusan value/threshold (ver contract.ts).
+  kind: z.enum([
+    "impact",
+    "door_open",
+    "door_closed",
+    "rollover",
+    "threshold_exceeded",
+    "hard_brake",
+    "curve_overspeed",
+    "dynamic_impact",
+    "track_irregularity",
+  ]),
   severity: z.enum(["info", "warning", "critical"]),
   value: z.number().optional(),
   threshold: z.number().optional(),
@@ -82,3 +94,19 @@ export const eventMessageSchema = z.object({
 });
 
 export type ValidatedEventMessage = z.infer<typeof eventMessageSchema>;
+
+export const ackMessageSchema = z.object({
+  contractVersion: contractVersionSchema,
+  msgId: z.string().uuid(),
+  nodeId: z.string().min(1),
+  unitId: z.string().min(1),
+  role: z.enum(["primary", "backup"]),
+  seq: z.number().int().min(0),
+  ts: z.number().int().min(0),
+  type: z.literal("ack"),
+  cmdId: z.string().uuid(),
+  status: z.enum(["delivered", "executed", "rejected"]),
+  reason: z.string().optional(),
+});
+
+export type ValidatedAckMessage = z.infer<typeof ackMessageSchema>;

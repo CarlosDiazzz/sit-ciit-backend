@@ -3,6 +3,7 @@ import { Server as SocketIOServer } from "socket.io";
 
 import type {
   ActiveNodePayload,
+  CommandUpdatePayload,
   EventPayload,
   NodeStatusPayload,
   StatusBroadcaster,
@@ -32,6 +33,10 @@ export class SocketTelemetryBroadcaster implements TelemetryBroadcaster, StatusB
 
   activeNode(payload: ActiveNodePayload): void {
     this.io.emit("unit:active-node", payload);
+  }
+
+  commandUpdate(payload: CommandUpdatePayload): void {
+    this.io.emit("command:update", payload);
   }
 
   event(payload: EventPayload): void {
