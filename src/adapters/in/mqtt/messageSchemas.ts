@@ -82,3 +82,19 @@ export const eventMessageSchema = z.object({
 });
 
 export type ValidatedEventMessage = z.infer<typeof eventMessageSchema>;
+
+export const ackMessageSchema = z.object({
+  contractVersion: contractVersionSchema,
+  msgId: z.string().uuid(),
+  nodeId: z.string().min(1),
+  unitId: z.string().min(1),
+  role: z.enum(["primary", "backup"]),
+  seq: z.number().int().min(0),
+  ts: z.number().int().min(0),
+  type: z.literal("ack"),
+  cmdId: z.string().uuid(),
+  status: z.enum(["delivered", "executed", "rejected"]),
+  reason: z.string().optional(),
+});
+
+export type ValidatedAckMessage = z.infer<typeof ackMessageSchema>;

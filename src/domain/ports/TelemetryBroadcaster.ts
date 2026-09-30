@@ -47,9 +47,19 @@ export interface EventPayload {
   ts: number;
 }
 
+/** Avance de un comando hacia el dashboard. */
+export interface CommandUpdatePayload {
+  cmdId: string;
+  nodeId: string;
+  status: "delivered" | "executed" | "rejected";
+  reason: string | null;
+  occurredAt: number;
+}
+
 /** Avisos en vivo hacia el dashboard que no son telemetría. */
 export interface StatusBroadcaster {
   nodeStatus(payload: NodeStatusPayload): void;
   activeNode(payload: ActiveNodePayload): void;
   event(payload: EventPayload): void;
+  commandUpdate(payload: CommandUpdatePayload): void;
 }
