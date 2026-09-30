@@ -13,6 +13,9 @@ import { makeIssueCommand } from "./application/issueCommand.js";
 import { makeIngestEvent } from "./application/ingestEvent.js";
 import { makeEvaluateUnitWeatherRisk } from "./application/evaluateUnitWeatherRisk.js";
 import { makeLogin } from "./application/login.js";
+import { ConsoleNotifier } from "./adapters/out/notifications/ConsoleNotifier.js";
+import { ResendNotifier } from "./adapters/out/notifications/ResendNotifier.js";
+import { registerCustomerRoutes } from "./adapters/in/http/customerRoutes.js";
 import { makeVerifyNodeSecret } from "./application/verifyNodeSecret.js";
 import { PgTelemetryRepository } from "./adapters/out/postgres/PgTelemetryRepository.js";
 import { PgUnitRepository } from "./adapters/out/postgres/PgUnitRepository.js";
@@ -89,6 +92,18 @@ const evaluateUnitWeatherRisk = makeEvaluateUnitWeatherRisk(
   app.log,
 );
 const login = makeLogin(userRepository);
+
+// Avisos por correo. Sin RESEND_API_KEY se usa el adaptador de consola:
+// levantar el backend sin credenciales no debe romper el inicio de
+// sesión, solo deja de mandar correo de verdad.
+const notificador = process.env.RESEND_API_KEY
+  ? new ResendNotifier({
+      apiKey: process.env.RESEND_API_KEY,
+      // onboarding@resend.dev funciona sin verificar dominio, que es lo
+      // que hace falta para probar en local.
+      from: process.env.RESEND_FROM ?? "SIT-CIIT <onboarding@resend.dev>",
+    })
+  : new ConsoleNotifier((msg) => app.log.info(msg));
 const verifyNodeSecret = makeVerifyNodeSecret(nodeCredentialRepository);
 
 const mqttClient = startTelemetrySubscriber(
@@ -145,10 +160,11 @@ registerUnitRoutes(app, unitRepository, pool);
 registerCommandRoutes(app, issueCommand, commandRepository, pool);
 registerEventRoutes(app, eventRepository, pool);
 registerWeatherRoutes(app, unitRepository, weatherRepository);
-registerAuthRoutes(app, login);
+registerAuthRoutes(app, login, notificador);
 registerUserRoutes(app, userRepository, pool);
 registerNodeRoutes(app, nodeCredentialRepository, pool);
 registerCoverageRoutes(app, getCellTowers);
+registerCustomerRoutes(app, pool, notificador);
 
 const port = Number(process.env.PORT ?? 3000);
 
