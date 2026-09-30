@@ -1,4 +1,5 @@
 import { registerNodeHistoryRoutes } from "./adapters/in/http/nodeHistoryRoutes.js";
+import { registerCustomerRoutes } from "./adapters/in/http/customerRoutes.js";
 import { registerAccess } from "./adapters/in/http/management/access.js";
 import { registerManagementRoutes } from "./adapters/in/http/management/routes.js";
 import "dotenv/config";
@@ -15,7 +16,6 @@ import { makeEvaluateUnitWeatherRisk } from "./application/evaluateUnitWeatherRi
 import { makeLogin } from "./application/login.js";
 import { ConsoleNotifier } from "./adapters/out/notifications/ConsoleNotifier.js";
 import { ResendNotifier } from "./adapters/out/notifications/ResendNotifier.js";
-import { registerCustomerRoutes } from "./adapters/in/http/customerRoutes.js";
 import { makeVerifyNodeSecret } from "./application/verifyNodeSecret.js";
 import { PgTelemetryRepository } from "./adapters/out/postgres/PgTelemetryRepository.js";
 import { PgUnitRepository } from "./adapters/out/postgres/PgUnitRepository.js";

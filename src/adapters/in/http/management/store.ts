@@ -600,6 +600,8 @@ export class ManagementStore {
   }
   async write(key: string, id: string | null, actor: Actor, input: Row) {
     const res = resources[key]!;
+    if (res.fields.some((f) => f.generated && f.key in input))
+      throw new ManagementError(400, "La guía se genera automáticamente y no se puede modificar.");
     return this.transaction(async (db) => {
       const before = id ? await this.get(key, id, actor, db, true) : null;
       const data = { ...before, ...input };
