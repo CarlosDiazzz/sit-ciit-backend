@@ -92,3 +92,20 @@ Dashboard: `npm run build`, `npm run lint`, `npm run test:ui` (primera vez: `npx
 Las pruebas crean esquemas PostgreSQL temporales independientes y los eliminan al terminar. No generan telemetría en las tablas operativas. El navegador usa puertos 4310/4311 y credenciales exclusivas de fixtures.
 
 La antigua landing pública usa su propio archivo de referencias y no constituye el portal autenticado de clientes. Su adaptador debe autenticarse antes de consultar las APIs ahora protegidas; este cambio incorpora el acceso de clientes en el dashboard (`/gestion`).
+
+## Historial de lecturas por nodo
+
+`GET /node-history/nodes` lista los dispositivos visibles para la cuenta,
+incluyendo los archivados. `GET /node-history?nodeId=UUID&from=ISO&to=ISO&limit=100`
+consulta un solo nodo. Los periodos pueden tener hasta 31 días; `limit` acepta
+1–200. La respuesta incluye `items`, `nextCursor`, `hasMore` y `snapshot`.
+Para páginas siguientes, enviar el cursor con los mismos filtros. Se ordena por
+hora de captura e identificador y se conserva un corte por hora de recepción
+para evitar que una sincronización posterior altere las páginas siguientes.
+
+No requiere migraciones nuevas. La consulta usa la telemetría existente,
+conserva ceros y valores ausentes y valida acceso a la unidad en cada petición.
+Clientes no acceden a telemetría cruda; operadores/técnicos usan su ámbito de
+asignación, y administradores/centro de control/auditores pueden consultar todos
+los nodos. El historial no inventa batería ni conectividad: los heartbeats
+actualmente guardan un estado reciente y no una serie histórica.

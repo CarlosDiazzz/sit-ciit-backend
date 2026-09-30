@@ -1,3 +1,4 @@
+import { registerNodeHistoryRoutes } from "../src/adapters/in/http/nodeHistoryRoutes.js";
 import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -62,6 +63,7 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
       actors[role] = rows[0];
     }
     registerAccess(app, pool);
+    registerNodeHistoryRoutes(app, pool);
     const commands = new PgCommandRepository(pool);
     registerManagementRoutes(
       app,
@@ -468,6 +470,92 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
           ).statusCode,
           400,
         );
+      },
+    );
+    await t.test(
+      "historial por nodo: filtros, permisos, paginación estable y nodos archivados",
+      async () => {
+        const timestamp = new Date(Date.now() - 60000).toISOString();
+        const earlier = new Date(Date.now() - 120000).toISOString();
+        const until = new Date().toISOString();
+        for (let seq = 0; seq < 3; seq++)
+          await pool.query(
+            "INSERT INTO telemetry(msg_id,node_id,seq,ts,accel_x,gps_speed_ms) VALUES($1,$2,$3,$4,$5,$6)",
+            [
+              randomUUID(),
+              node.id,
+              seq,
+              timestamp,
+              seq === 0 ? 0 : null,
+              seq === 0 ? 0 : 2,
+            ],
+          );
+        const params = new URLSearchParams({
+          nodeId: node.id,
+          from: earlier,
+          to: until,
+          limit: "2",
+        });
+        const first = await req("GET", `/node-history?${params}`);
+        assert.equal(first.statusCode, 200, first.body);
+        assert.equal(first.json().items.length, 2);
+        assert.equal(first.json().hasMore, true);
+        params.set("cursor", first.json().nextCursor);
+        const second = await req("GET", `/node-history?${params}`);
+        assert.equal(second.statusCode, 200, second.body);
+        assert.equal(second.json().items.length, 1);
+        assert.equal(second.json().hasMore, false);
+        const combined = [...first.json().items, ...second.json().items];
+        assert.equal(new Set(combined.map((r) => r.id)).size, 3);
+        assert.ok(combined.every((r) => r.nodeCode === "test-node"));
+        assert.ok(combined.some((r) => r.accelX === 0 && r.gpsSpeedMs === 0));
+        assert.ok(combined.some((r) => r.accelX === null));
+        params.delete("cursor");
+        params.set("to", earlier);
+        params.set("from", until);
+        assert.equal(
+          (await req("GET", `/node-history?${params}`)).statusCode,
+          400,
+        );
+        params.set("from", earlier);
+        params.set("to", until);
+        assert.equal(
+          (await req("GET", `/node-history?${params}`, undefined, "cliente"))
+            .statusCode,
+          403,
+        );
+        assert.equal(
+          (await req("GET", `/node-history?${params}`, undefined, "operator"))
+            .statusCode,
+          200,
+        );
+        const stranger = await req("POST", "/nodes", {
+          nodeCode: "other-node",
+          unitCode: "other-unit",
+          role: "primary",
+        });
+        assert.equal(stranger.statusCode, 201);
+        params.set("nodeId", stranger.json().id);
+        assert.equal(
+          (await req("GET", `/node-history?${params}`, undefined, "operator"))
+            .statusCode,
+          403,
+        );
+        assert.ok(
+          !(await req("GET", "/node-history/nodes", undefined, "operator"))
+            .json()
+            .some((n: any) => n.nodeCode === "other-node"),
+        );
+        await pool.query("UPDATE nodes SET active=false WHERE id=$1", [
+          node.id,
+        ]);
+        params.set("nodeId", node.id);
+        assert.equal(
+          (await req("GET", `/node-history?${params}`)).json().items.length,
+          2,
+        );
+        await pool.query("UPDATE nodes SET active=true WHERE id=$1", [node.id]);
+        await pool.query("DELETE FROM telemetry WHERE node_id=$1", [node.id]);
       },
     );
     await t.test(

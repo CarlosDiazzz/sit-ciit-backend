@@ -1,3 +1,4 @@
+import { registerNodeHistoryRoutes } from "./adapters/in/http/nodeHistoryRoutes.js";
 import { registerAccess } from "./adapters/in/http/management/access.js";
 import { registerManagementRoutes } from "./adapters/in/http/management/routes.js";
 import "dotenv/config";
@@ -132,6 +133,7 @@ app.get("/health", async () => ({ status: "ok" }));
 registerAccess(app, pool);
 registerManagementRoutes(app, pool, issueCommand);
 registerTelemetryRoutes(app, pool);
+registerNodeHistoryRoutes(app, pool);
 registerUnitRoutes(app, unitRepository, pool);
 registerCommandRoutes(app, issueCommand, commandRepository, pool);
 registerEventRoutes(app, eventRepository, pool);

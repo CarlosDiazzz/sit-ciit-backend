@@ -8,11 +8,16 @@ const querySchema = z.object({
   to: z.string().datetime().optional(),
 });
 
-export function registerTelemetryRoutes(app: FastifyInstance, pool: Pool): void {
+export function registerTelemetryRoutes(
+  app: FastifyInstance,
+  pool: Pool,
+): void {
   app.get("/telemetry", async (request, reply) => {
     const parsed = querySchema.safeParse(request.query);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "query inválida", issues: parsed.error.issues });
+      return reply
+        .code(400)
+        .send({ error: "query inválida", issues: parsed.error.issues });
     }
     const { unitId, from, to } = parsed.data;
 
@@ -31,7 +36,7 @@ export function registerTelemetryRoutes(app: FastifyInstance, pool: Pool): void 
           AND ($3::timestamptz IS NULL OR t.ts <= $3::timestamptz)
         ORDER BY t.ts DESC
         LIMIT 500`,
-      [unitId, from ?? null, to ?? null]
+      [unitId, from ?? null, to ?? null],
     );
 
     // camelCase + ISO, como el resto de la API — este endpoint era la
@@ -40,29 +45,33 @@ export function registerTelemetryRoutes(app: FastifyInstance, pool: Pool): void 
     // abrir la pantalla, no solo con lo que llegue por socket desde ese
     // momento (antes se veía "vacío" si el nodo no estaba publicando
     // justo en ese instante, aunque hubiera datos recientes guardados).
-    return rows.map((r) => ({
-      id: r.id,
-      msgId: r.msg_id,
-      nodeCode: r.node_code,
-      role: r.role,
-      seq: r.seq,
-      ts: r.ts.toISOString(),
-      receivedAt: r.received_at.toISOString(),
-      accelX: r.accel_x,
-      accelY: r.accel_y,
-      accelZ: r.accel_z,
-      gyroX: r.gyro_x,
-      gyroY: r.gyro_y,
-      gyroZ: r.gyro_z,
-      magX: r.mag_x,
-      magY: r.mag_y,
-      magZ: r.mag_z,
-      lux: r.lux,
-      pressureHpa: r.pressure_hpa,
-      gpsLat: r.gps_lat,
-      gpsLon: r.gps_lon,
-      gpsSpeedMs: r.gps_speed_ms,
-      gpsAccuracyM: r.gps_accuracy_m,
-    }));
+    return rows.map(serializeTelemetry);
   });
+}
+
+export function serializeTelemetry(r: Record<string, any>) {
+  return {
+    id: r.id,
+    msgId: r.msg_id,
+    nodeCode: r.node_code,
+    role: r.role,
+    seq: r.seq,
+    ts: r.ts.toISOString(),
+    receivedAt: r.received_at.toISOString(),
+    accelX: r.accel_x,
+    accelY: r.accel_y,
+    accelZ: r.accel_z,
+    gyroX: r.gyro_x,
+    gyroY: r.gyro_y,
+    gyroZ: r.gyro_z,
+    magX: r.mag_x,
+    magY: r.mag_y,
+    magZ: r.mag_z,
+    lux: r.lux,
+    pressureHpa: r.pressure_hpa,
+    gpsLat: r.gps_lat,
+    gpsLon: r.gps_lon,
+    gpsSpeedMs: r.gps_speed_ms,
+    gpsAccuracyM: r.gps_accuracy_m,
+  };
 }

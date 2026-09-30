@@ -1,3 +1,4 @@
+import { registerNodeHistoryRoutes } from "../src/adapters/in/http/nodeHistoryRoutes.js";
 // Servidor exclusivo de Playwright: usa un esquema temporal; nunca las tablas reales.
 import "dotenv/config";
 import Fastify from "fastify";
@@ -60,6 +61,7 @@ try {
   app.get("/health", () => ({ status: "ok" }));
   registerAccess(app, pool);
   registerManagementRoutes(app, pool);
+  registerNodeHistoryRoutes(app, pool);
   registerAuthRoutes(app, makeLogin(new PgUserRepository(pool)));
   registerNodeRoutes(app, new PgNodeCredentialRepository(pool), pool);
   registerUnitRoutes(app, new PgUnitRepository(pool), pool);
