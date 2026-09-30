@@ -2,13 +2,20 @@
  *  del contrato MQTT (`src/contract/contract.ts`), que describe quién
  *  puede emitir comandos a un nodo. `cliente` nunca emite comandos, así
  *  que no pertenece a ese tipo; vive solo aquí. */
-export type UserRole = "control_center" | "operator" | "cliente";
+export type UserRole =
+  | "admin"
+  | "control_center"
+  | "operator"
+  | "cliente"
+  | "technician"
+  | "auditor";
 
 export interface UserRecord {
   id: string;
   email: string;
   role: UserRole;
   createdAt: Date;
+  active?: boolean;
 }
 
 /** Solo para el login: incluye el hash, que nunca debe salir por la API

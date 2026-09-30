@@ -36,6 +36,7 @@ export class PgUnitRepository implements UnitRepository {
     const { rows: unitRows } = await this.pool.query<UnitRow>(
       `SELECT id, unit_code, label, active_node_id, cargo_category
          FROM units
+        WHERE active
         ORDER BY unit_code`
     );
 
@@ -53,6 +54,7 @@ export class PgUnitRepository implements UnitRepository {
               ) AS capabilities
          FROM nodes n
          LEFT JOIN node_capabilities c ON c.node_id = n.id
+        WHERE n.active
         GROUP BY n.id
         ORDER BY n.role, n.node_code`
     );

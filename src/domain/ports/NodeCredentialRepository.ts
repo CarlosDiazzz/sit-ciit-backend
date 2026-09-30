@@ -10,6 +10,7 @@ export interface NodeCredential {
   /** No expone el secreto — solo si tiene uno asignado. */
   hasSecret: boolean;
   isOnline: boolean;
+  active: boolean;
   createdAt: Date;
 }
 
@@ -17,7 +18,11 @@ export interface NodeCredentialRepository {
   /** Da de alta unit/node si no existen y genera un secreto nuevo. A
    *  diferencia del viejo auto-registro, esto lo dispara una acción
    *  explícita de control_center, no un mensaje MQTT sin verificar. */
-  create(nodeCode: string, unitCode: string, role: "primary" | "backup"): Promise<{ node: NodeCredential; secret: string }>;
+  create(
+    nodeCode: string,
+    unitCode: string,
+    role: "primary" | "backup",
+  ): Promise<{ node: NodeCredential; secret: string }>;
   listAll(): Promise<NodeCredential[]>;
   /** null si el nodo no existe. */
   regenerateSecret(id: string): Promise<string | null>;

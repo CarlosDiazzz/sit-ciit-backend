@@ -184,3 +184,18 @@ comandos ya emitidos. Es un patrón estándar de bitácora/auditoría.
   aplicación antes de insertar en `commands`, no en el esquema — una
   tabla de permisos sería sobre-ingeniería para dos roles y seis acciones
   fijas.
+
+## Ampliación logística
+
+Las migraciones `0008_management_roles.sql`, `0009_logistics_management.sql` y
+`0010_multimodal_manifest.sql` agregan empresas, perfiles de usuario y monitoreo,
+tipos de carga, contenedores, ubicaciones, rutas/escalas, envíos, viajes,
+manifiestos, asignaciones, incidentes/comentarios, mantenimiento, notificaciones,
+aplicaciones de perfiles y auditoría. Véase [gestión logística](gestion-logistica.md).
+
+Las relaciones de catálogo tienen claves foráneas sin borrado en cascada; la baja
+administrativa usa `active=false`. Los perfiles de usuario están separados de la
+cuenta y los manifiestos/asignaciones representan relaciones, no listas dentro de
+columnas. Las versiones de ruta y configuración se guardan como hechos históricos
+al iniciar un viaje o aplicar un perfil, conservando el modelo actual de comandos
+con ACK y la ingesta original de telemetría.

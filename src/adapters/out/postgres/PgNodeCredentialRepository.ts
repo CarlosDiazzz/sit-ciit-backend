@@ -14,6 +14,7 @@ interface NodeRow {
   role: "primary" | "backup";
   secret_hash: string | null;
   is_online: boolean;
+  active: boolean;
   created_at: Date;
 }
 
@@ -36,6 +37,7 @@ function toCredential(r: NodeRow): NodeCredential {
     role: r.role,
     hasSecret: r.secret_hash !== null,
     isOnline: r.is_online,
+    active: r.active,
     createdAt: r.created_at,
   };
 }
@@ -50,7 +52,7 @@ export class PgNodeCredentialRepository implements NodeCredentialRepository {
   async create(
     nodeCode: string,
     unitCode: string,
-    role: "primary" | "backup"
+    role: "primary" | "backup",
   ): Promise<{ node: NodeCredential; secret: string }> {
     const client = await this.pool.connect();
     try {
@@ -58,13 +60,20 @@ export class PgNodeCredentialRepository implements NodeCredentialRepository {
 
       // Upsert de la unidad: aquí sí es apropiado — lo dispara una acción
       // explícita de control_center, no un mensaje MQTT sin verificar.
-      const { rows: unitRows } = await client.query<{ id: string }>(
+      const { rows: unitRows } = await client.query<{
+        id: string;
+        active: boolean;
+      }>(
         `INSERT INTO units (unit_code) VALUES ($1)
          ON CONFLICT (unit_code) DO UPDATE SET unit_code = units.unit_code
-         RETURNING id`,
-        [unitCode]
+         RETURNING id, active`,
+        [unitCode],
       );
       const unitId = unitRows[0]!.id;
+      if (!unitRows[0]!.active)
+        throw new NodeConflictError(
+          "Reactiva la unidad antes de registrar un dispositivo.",
+        );
 
       const secret = generateSecret();
       const secretHash = await hashPassword(secret);
@@ -73,7 +82,7 @@ export class PgNodeCredentialRepository implements NodeCredentialRepository {
         `INSERT INTO nodes (node_code, unit_id, role, secret_hash)
          VALUES ($1, $2, $3, $4)
          RETURNING id, created_at`,
-        [nodeCode, unitId, role, secretHash]
+        [nodeCode, unitId, role, secretHash],
       );
 
       await client.query("COMMIT");
@@ -86,6 +95,7 @@ export class PgNodeCredentialRepository implements NodeCredentialRepository {
           role,
           hasSecret: true,
           isOnline: false,
+          active: true,
           createdAt: rows[0]!.created_at,
         },
         secret,
@@ -94,7 +104,7 @@ export class PgNodeCredentialRepository implements NodeCredentialRepository {
       await client.query("ROLLBACK");
       if (isUniqueViolation(err)) {
         throw new NodeConflictError(
-          `ya existe un nodo '${nodeCode}', o la unidad '${unitCode}' ya tiene un nodo con rol '${role}'`
+          `ya existe un nodo '${nodeCode}', o la unidad '${unitCode}' ya tiene un nodo con rol '${role}'`,
         );
       }
       throw err;
@@ -105,10 +115,10 @@ export class PgNodeCredentialRepository implements NodeCredentialRepository {
 
   async listAll(): Promise<NodeCredential[]> {
     const { rows } = await this.pool.query<NodeRow>(
-      `SELECT n.id, n.node_code, u.unit_code, n.role, n.secret_hash, n.is_online, n.created_at
+      `SELECT n.id, n.node_code, u.unit_code, n.role, n.secret_hash, n.is_online, n.active, n.created_at
          FROM nodes n
          JOIN units u ON u.id = n.unit_id
-        ORDER BY n.created_at`
+        ORDER BY n.created_at`,
     );
     return rows.map(toCredential);
   }
@@ -118,20 +128,23 @@ export class PgNodeCredentialRepository implements NodeCredentialRepository {
     const secretHash = await hashPassword(secret);
     const { rowCount } = await this.pool.query(
       `UPDATE nodes SET secret_hash = $2 WHERE id = $1`,
-      [id, secretHash]
+      [id, secretHash],
     );
     return (rowCount ?? 0) > 0 ? secret : null;
   }
 
   async delete(id: string): Promise<boolean> {
-    const { rowCount } = await this.pool.query(`DELETE FROM nodes WHERE id = $1`, [id]);
+    const { rowCount } = await this.pool.query(
+      `DELETE FROM nodes WHERE id = $1`,
+      [id],
+    );
     return (rowCount ?? 0) > 0;
   }
 
   async verifySecret(nodeCode: string, secret: string): Promise<boolean> {
     const { rows } = await this.pool.query<{ secret_hash: string | null }>(
-      `SELECT secret_hash FROM nodes WHERE node_code = $1`,
-      [nodeCode]
+      `SELECT n.secret_hash FROM nodes n JOIN units u ON u.id=n.unit_id WHERE n.node_code = $1 AND n.active AND u.active`,
+      [nodeCode],
     );
     const hash = rows[0]?.secret_hash;
     if (!hash) return false;
@@ -140,13 +153,18 @@ export class PgNodeCredentialRepository implements NodeCredentialRepository {
 
   async findIdByCode(nodeCode: string): Promise<string | null> {
     const { rows } = await this.pool.query<{ id: string }>(
-      `SELECT id FROM nodes WHERE node_code = $1`,
-      [nodeCode]
+      `SELECT id FROM nodes WHERE node_code = $1 AND active`,
+      [nodeCode],
     );
     return rows[0]?.id ?? null;
   }
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  return typeof err === "object" && err !== null && "code" in err && err.code === UNIQUE_VIOLATION;
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    err.code === UNIQUE_VIOLATION
+  );
 }

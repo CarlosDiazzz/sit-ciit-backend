@@ -1,0 +1,709 @@
+import "dotenv/config";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import Fastify from "fastify";
+import { Pool } from "pg";
+import { registerAccess } from "../src/adapters/in/http/management/access.js";
+import { registerManagementRoutes } from "../src/adapters/in/http/management/routes.js";
+import { signToken } from "../src/domain/jwt.js";
+import { hashPassword } from "../src/domain/password.js";
+import { PgCommandRepository } from "../src/adapters/out/postgres/PgCommandRepository.js";
+import { makeIssueCommand } from "../src/application/issueCommand.js";
+import { resources } from "../src/domain/management/resources.js";
+import { registerUnitRoutes } from "../src/adapters/in/http/unitRoutes.js";
+import { PgUnitRepository } from "../src/adapters/out/postgres/PgUnitRepository.js";
+import { registerEventRoutes } from "../src/adapters/in/http/eventRoutes.js";
+import { PgEventRepository } from "../src/adapters/out/postgres/PgEventRepository.js";
+import { registerAuthRoutes } from "../src/adapters/in/http/authRoutes.js";
+import { makeLogin } from "../src/application/login.js";
+import { PgUserRepository } from "../src/adapters/out/postgres/PgUserRepository.js";
+import { registerNodeRoutes } from "../src/adapters/in/http/nodeRoutes.js";
+import { PgNodeCredentialRepository } from "../src/adapters/out/postgres/PgNodeCredentialRepository.js";
+
+test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquema PostgreSQL aislado", async (t) => {
+  assert.ok(
+    process.env.DATABASE_URL,
+    "Se requiere DATABASE_URL para las pruebas de integración.",
+  );
+  process.env.JWT_SECRET = "test-only-management-secret";
+  const schema = `test_management_${randomUUID().replaceAll("-", "")}`;
+  const root = new Pool({ connectionString: process.env.DATABASE_URL });
+  await root.query(`CREATE SCHEMA ${schema}`);
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    options: `-c search_path=${schema},public`,
+  });
+  const app = Fastify();
+  try {
+    for (const file of readdirSync("migrations")
+      .filter((f) => f.endsWith(".sql"))
+      .sort()) {
+      const sql = readFileSync(`migrations/${file}`, "utf8")
+        .replace("CREATE EXTENSION IF NOT EXISTS timescaledb;", "")
+        .replace(/SELECT create_hypertable\([^;]+;/g, "");
+      await pool.query(sql);
+    }
+    const hash = await hashPassword("test-password-123");
+    const actors: Record<string, { id: string; email: string; role: any }> = {};
+    for (const role of [
+      "admin",
+      "control_center",
+      "operator",
+      "cliente",
+      "technician",
+      "auditor",
+    ]) {
+      const { rows } = await pool.query(
+        "INSERT INTO users(email,password_hash,role) VALUES($1,$2,$3) RETURNING id,email,role",
+        [`${role}@test.invalid`, hash, role],
+      );
+      actors[role] = rows[0];
+    }
+    registerAccess(app, pool);
+    const commands = new PgCommandRepository(pool);
+    registerManagementRoutes(
+      app,
+      pool,
+      makeIssueCommand(
+        commands,
+        { publish: async () => {} },
+        { info: () => {} },
+      ),
+    );
+    registerAuthRoutes(app, makeLogin(new PgUserRepository(pool)));
+    registerUnitRoutes(app, new PgUnitRepository(pool), pool);
+    registerEventRoutes(app, new PgEventRepository(pool), pool);
+    registerNodeRoutes(app, new PgNodeCredentialRepository(pool), pool);
+    const req = (
+      method: string,
+      path: string,
+      body?: unknown,
+      role = "admin",
+    ) =>
+      app.inject({
+        method: method as any,
+        url: path,
+        payload: body as any,
+        headers: { authorization: `Bearer ${signToken(actors[role])}` },
+      });
+    const create = async (key: string, body: unknown) => {
+      const r = await req("POST", `/management/${key}`, body);
+      assert.equal(r.statusCode, 201, `${key}: ${r.body}`);
+      return r.json();
+    };
+    const patch = async (key: string, id: string, body: unknown) => {
+      const r = await req("PATCH", `/management/${key}/${id}`, body);
+      assert.equal(r.statusCode, 200, `${key}: ${r.body}`);
+      return r.json();
+    };
+    const now = new Date(Date.now() - 3600000).toISOString();
+    const future = new Date(Date.now() + 3600000).toISOString();
+    await t.test("autenticación, validación estricta y unicidad", async () => {
+      assert.equal((await app.inject("/management/resources")).statusCode, 401);
+      assert.equal(
+        (
+          await req("POST", "/management/companies", {
+            code: "x",
+            name: "X",
+            unexpected: "x",
+          })
+        ).statusCode,
+        400,
+      );
+      assert.equal(
+        (
+          await req("POST", "/management/locations", {
+            code: "x",
+            name: "X",
+            location_type: "port",
+            latitude: 100,
+            longitude: 0,
+          })
+        ).statusCode,
+        400,
+      );
+    });
+    const company = await create("companies", {
+      code: "co",
+      name: "Empresa de prueba",
+    });
+    const foreignCompany = await create("companies", {
+      code: "other",
+      name: "Otra empresa",
+    });
+    await pool.query("UPDATE users SET company_id=$1 WHERE id=$2", [
+      company.id,
+      actors.cliente.id,
+    ]);
+    const profile = await create("monitoring-profiles", {
+      code: "profile",
+      name: "Perfil",
+      sampling_ms: 1000,
+      impact_threshold_g: 2.5,
+    });
+    const cargo = await create("cargo-types", {
+      code: "cargo",
+      name: "Carga",
+      monitoring_profile_id: profile.id,
+      weather_category: "agricola",
+    });
+    const origin = await create("locations", {
+      code: "a",
+      name: "Origen",
+      location_type: "port",
+      latitude: 16,
+      longitude: -95,
+    });
+    const destination = await create("locations", {
+      code: "b",
+      name: "Destino",
+      location_type: "terminal",
+      latitude: 18,
+      longitude: -94,
+    });
+    const route = await create("routes", {
+      code: "route",
+      name: "Ruta",
+      origin_id: origin.id,
+      destination_id: destination.id,
+      distance_km: 300,
+    });
+    const checkpoint = await create("route-checkpoints", {
+      route_id: route.id,
+      location_id: origin.id,
+      position: 1,
+    });
+    const unit = await create("units", {
+      unit_code: "unit-test",
+      label: "Unidad",
+      transport_type: "vagon",
+      status: "available",
+      capacity_kg: 1000,
+      company_id: company.id,
+    });
+    const otherUnit = await create("units", {
+      unit_code: "other-unit",
+      transport_type: "camion",
+      status: "available",
+    });
+    const nodeResponse = await req("POST", "/nodes", {
+      nodeCode: "test-node",
+      unitCode: "unit-test",
+      role: "primary",
+    });
+    assert.equal(nodeResponse.statusCode, 201, nodeResponse.body);
+    const node = nodeResponse.json();
+    assert.ok(node.secret);
+    const container = await create("containers", {
+      code: "container",
+      name: "Contenedor",
+      container_type: "standard",
+      capacity_kg: 500,
+      status: "available",
+      company_id: company.id,
+    });
+    const shipment = await create("shipments", {
+      code: "shipment",
+      name: "Envío",
+      company_id: company.id,
+      cargo_type_id: cargo.id,
+      origin_id: origin.id,
+      destination_id: destination.id,
+      weight_kg: 100,
+      status: "ready",
+    });
+    const foreignShipment = await create("shipments", {
+      code: "foreign-shipment",
+      name: "Ajeno",
+      company_id: foreignCompany.id,
+      cargo_type_id: cargo.id,
+      origin_id: origin.id,
+      destination_id: destination.id,
+      weight_kg: 100,
+      status: "draft",
+    });
+    const trip = await create("trips", {
+      code: "trip",
+      name: "Viaje",
+      route_id: route.id,
+      unit_id: unit.id,
+      planned_departure: now,
+      planned_arrival: future,
+      status: "planned",
+    });
+    const manifest = await create("trip-shipments", {
+      trip_id: trip.id,
+      shipment_id: shipment.id,
+      container_id: container.id,
+    });
+    const assignment = await create("assignments", {
+      user_id: actors.operator.id,
+      trip_id: trip.id,
+      function: "driver",
+      starts_at: now,
+    });
+    const notification = await create("notification-rules", {
+      code: "notify",
+      name: "Avisos",
+      user_id: actors.admin.id,
+      severity: "warning",
+      channel: "dashboard",
+    });
+    const incident = await create("incidents", {
+      code: "incident",
+      name: "Revisión",
+      unit_id: unit.id,
+      trip_id: trip.id,
+      assigned_to: actors.operator.id,
+      severity: "warning",
+      description: "Fixture de prueba aislada",
+      status: "open",
+    });
+    const maintenance = await create("maintenance", {
+      code: "maintenance",
+      name: "Revisión técnica",
+      node_id: node.id,
+      technician_id: actors.technician.id,
+      scheduled_at: future,
+      description: "Revisión",
+      status: "scheduled",
+    });
+    const extraUser = await create("users", {
+      email: "new@test.invalid",
+      password: "new-password-123",
+      role: "operator",
+      first_name: "Prueba",
+      last_name: "Usuario",
+      field_function: "driver",
+      license_number: "LIC-TEST",
+    });
+    const records: Record<string, any> = {
+      companies: company,
+      users: extraUser,
+      units: unit,
+      nodes: { ...node, id: node.id },
+      containers: container,
+      "monitoring-profiles": profile,
+      "cargo-types": cargo,
+      locations: origin,
+      routes: route,
+      "route-checkpoints": checkpoint,
+      shipments: shipment,
+      trips: trip,
+      "trip-shipments": manifest,
+      assignments: assignment,
+      incidents: incident,
+      "notification-rules": notification,
+      maintenance,
+    };
+    await t.test(
+      "lista, detalle y actualización para todos los recursos",
+      async () => {
+        for (const [key, record] of Object.entries(records)) {
+          const list = await req("GET", `/management/${key}`);
+          assert.equal(list.statusCode, 200, list.body);
+          assert.ok(
+            list.json().items.some((r: any) => r.id === record.id),
+            key,
+          );
+          assert.equal(
+            (await req("GET", `/management/${key}/${record.id}`)).statusCode,
+            200,
+            key,
+          );
+          const field = resources[key].fields.find(
+            (f) =>
+              ["text", "textarea"].includes(f.type) &&
+              !["code", "unit_code"].includes(f.key),
+          );
+          if (field)
+            await patch(key, record.id, { [field.key]: "Actualizado" });
+        }
+        assert.equal(
+          (
+            await req("POST", "/management/companies", {
+              code: "co",
+              name: "Duplicado",
+            })
+          ).statusCode,
+          409,
+        );
+        assert.equal(
+          (
+            await req("PATCH", `/management/units/${unit.id}`, {
+              unit_code: null,
+            })
+          ).statusCode,
+          400,
+        );
+        assert.equal(
+          (
+            await req("PATCH", `/management/trips/${trip.id}`, {
+              status: "completed",
+            })
+          ).statusCode,
+          409,
+        );
+      },
+    );
+    await t.test(
+      "perfiles emiten configuración compatible y conservan confirmaciones",
+      async () => {
+        const response = await req(
+          "POST",
+          `/management/monitoring-profiles/${profile.id}/apply`,
+          { node_id: node.id },
+        );
+        assert.equal(response.statusCode, 201, response.body);
+        assert.equal(response.json().commands.length, 2);
+        const command = response.json().commands[0];
+        await commands.applyAck({
+          cmdId: command.cmdId,
+          msgId: randomUUID(),
+          status: "executed",
+          occurredAt: new Date(),
+        });
+        const applications = (
+          await req(
+            "GET",
+            `/management/monitoring-profiles/${profile.id}/applications`,
+          )
+        ).json();
+        assert.equal(applications.length, 1);
+        assert.ok(
+          applications[0].commands.some((c: any) => c.status === "executed"),
+        );
+        assert.equal(
+          (
+            await req(
+              "POST",
+              `/management/monitoring-profiles/${profile.id}/apply`,
+              { node_id: node.id },
+              "operator",
+            )
+          ).statusCode,
+          403,
+        );
+      },
+    );
+    await t.test(
+      "roles, empresa y asignaciones restringen las consultas y escrituras",
+      async () => {
+        const list = (
+          await req("GET", "/management/shipments", undefined, "cliente")
+        ).json();
+        assert.ok(list.items.some((r: any) => r.id === shipment.id));
+        assert.ok(!list.items.some((r: any) => r.id === foreignShipment.id));
+        assert.equal(
+          (
+            await req(
+              "GET",
+              `/management/shipments/${foreignShipment.id}`,
+              undefined,
+              "cliente",
+            )
+          ).statusCode,
+          404,
+        );
+        assert.equal(
+          (
+            await req(
+              "POST",
+              "/management/companies",
+              { code: "bad", name: "bad" },
+              "cliente",
+            )
+          ).statusCode,
+          403,
+        );
+        assert.equal(
+          (
+            await req(
+              "POST",
+              "/management/companies",
+              { code: "bad", name: "bad" },
+              "auditor",
+            )
+          ).statusCode,
+          403,
+        );
+        assert.equal(
+          (await req("GET", "/units", undefined, "cliente")).statusCode,
+          403,
+        );
+        const units = (
+          await req("GET", "/units", undefined, "operator")
+        ).json();
+        assert.equal(units.length, 1);
+        assert.equal(units[0].id, unit.id);
+        assert.equal(
+          (
+            await req(
+              "PATCH",
+              `/units/${otherUnit.id}/cargo-category`,
+              { category: "agricola" },
+              "operator",
+            )
+          ).statusCode,
+          403,
+        );
+        assert.equal(
+          (
+            await req(
+              "PATCH",
+              `/management/users/${extraUser.id}`,
+              { role: "admin" },
+              "control_center",
+            )
+          ).statusCode,
+          403,
+        );
+        assert.equal(
+          (
+            await req("PATCH", `/management/users/${actors.admin.id}`, {
+              role: "operator",
+            })
+          ).statusCode,
+          400,
+        );
+      },
+    );
+    await t.test(
+      "inicio y fin de viaje actualizan manifiesto, recursos y snapshot",
+      async () => {
+        const started = await patch("trips", trip.id, { status: "in_transit" });
+        assert.ok(started.actual_departure);
+        assert.ok(started.route_snapshot);
+        assert.equal(started.route_snapshot.version, 2);
+        assert.equal(
+          (
+            await req("PATCH", `/management/trips/${trip.id}`, {
+              unit_id: otherUnit.id,
+            })
+          ).statusCode,
+          409,
+        );
+        assert.equal(
+          (await req("DELETE", `/management/trip-shipments/${manifest.id}`))
+            .statusCode,
+          409,
+        );
+        const u = (await req("GET", `/management/units/${unit.id}`)).json();
+        assert.equal(u.status, "in_transit");
+        await patch("routes", route.id, { description: "Nueva versión" });
+        const finished = await patch("trips", trip.id, {
+          status: "completed",
+          planned_departure: now,
+          planned_arrival: future,
+          unit_id: unit.id,
+          route_id: route.id,
+        });
+        assert.ok(finished.actual_arrival);
+        assert.equal(finished.route_snapshot.version, 2);
+        assert.equal(
+          (await req("GET", `/management/shipments/${shipment.id}`)).json()
+            .status,
+          "delivered",
+        );
+        assert.equal(
+          (await req("GET", `/management/containers/${container.id}`)).json()
+            .status,
+          "available",
+        );
+        const report = await req(
+          "GET",
+          `/management/reports/trips/${trip.id}`,
+          undefined,
+          "cliente",
+        );
+        assert.equal(report.statusCode, 200);
+        assert.equal(report.json().telemetry.samples, 0);
+        assert.equal(report.json().telemetry.average_speed_kmh, null);
+      },
+    );
+    await t.test(
+      "comentarios, resolución, notificaciones y mantenimiento",
+      async () => {
+        const comment = await req(
+          "POST",
+          `/management/incidents/${incident.id}/notes`,
+          { body: "Revisado", evidence_url: "https://example.com/evidence" },
+        );
+        assert.equal(comment.statusCode, 201, comment.body);
+        assert.equal(
+          (
+            await req("PATCH", `/management/incidents/${incident.id}`, {
+              status: "resolved",
+            })
+          ).statusCode,
+          400,
+        );
+        await patch("incidents", incident.id, {
+          status: "resolved",
+          resolution: "Inspección terminada",
+        });
+        assert.equal(
+          (
+            await req("POST", `/management/incidents/${incident.id}/notes`, {
+              body: "Nuevo comentario",
+            })
+          ).statusCode,
+          409,
+        );
+        assert.equal(
+          (
+            await req("GET", `/management/incidents/${incident.id}/notes`)
+          ).json().length,
+          1,
+        );
+        assert.equal(
+          (await req("GET", "/management/notification-deliveries")).json()
+            .length,
+          1,
+        );
+        assert.equal(
+          (
+            await req("PATCH", `/management/maintenance/${maintenance.id}`, {
+              status: "completed",
+            })
+          ).statusCode,
+          400,
+        );
+        await patch("maintenance", maintenance.id, {
+          status: "completed",
+          result: "Verificado",
+        });
+      },
+    );
+    await t.test(
+      "envíos multimodales conservan el envío listo entre tramos",
+      async () => {
+        const s = await create("shipments", {
+          code: "multimodal",
+          name: "Multimodal",
+          company_id: company.id,
+          cargo_type_id: cargo.id,
+          origin_id: origin.id,
+          destination_id: destination.id,
+          weight_kg: 50,
+          status: "ready",
+        });
+        for (const final_leg of [false, true]) {
+          const leg = await create("trips", {
+            code: final_leg ? "final-leg" : "first-leg",
+            name: "Tramo",
+            route_id: route.id,
+            unit_id: unit.id,
+            planned_departure: now,
+            planned_arrival: future,
+            status: "planned",
+          });
+          await create("trip-shipments", {
+            trip_id: leg.id,
+            shipment_id: s.id,
+            final_leg,
+          });
+          await create("assignments", {
+            user_id: actors.operator.id,
+            trip_id: leg.id,
+            function: "driver",
+            starts_at: now,
+          });
+          await patch("trips", leg.id, { status: "in_transit" });
+          await patch("trips", leg.id, { status: "completed" });
+          assert.equal(
+            (await req("GET", `/management/shipments/${s.id}`)).json().status,
+            final_leg ? "delivered" : "ready",
+          );
+        }
+      },
+    );
+    await t.test(
+      "bajas preservan datos, revocan acceso y no filtran secretos",
+      async () => {
+        const archive = await req(
+          "DELETE",
+          `/management/users/${extraUser.id}`,
+        );
+        assert.equal(archive.statusCode, 204, archive.body);
+        const raw = await pool.query(
+          "SELECT active,password_hash FROM users WHERE id=$1",
+          [extraUser.id],
+        );
+        assert.equal(raw.rows[0].active, false);
+        assert.ok(raw.rows[0].password_hash);
+        const login = await app.inject({
+          method: "POST",
+          url: "/auth/login",
+          payload: { email: extraUser.email, password: "new-password-123" },
+        });
+        assert.equal(login.statusCode, 401);
+        const audit = await req("GET", "/management/audit?limit=100");
+        assert.equal(audit.statusCode, 200);
+        assert.ok(audit.json().total > 20);
+        assert.ok(!audit.body.includes("scrypt$"));
+        assert.ok(!audit.body.includes(node.secret));
+        const userList = await req("GET", "/management/users?archived=true");
+        assert.ok(!userList.body.includes("password_hash"));
+        const oldToken = signToken({
+          id: extraUser.id,
+          email: extraUser.email,
+          role: "operator",
+        });
+        assert.equal(
+          (
+            await app.inject({
+              url: "/management/resources",
+              headers: { authorization: `Bearer ${oldToken}` },
+            })
+          ).statusCode,
+          401,
+        );
+        for (const key of [
+          "incidents",
+          "maintenance",
+          "notification-rules",
+          "assignments",
+          "trips",
+          "shipments",
+          "route-checkpoints",
+          "routes",
+          "containers",
+          "cargo-types",
+          "monitoring-profiles",
+          "locations",
+          "nodes",
+          "units",
+          "companies",
+        ]) {
+          const r = await req(
+            "DELETE",
+            `/management/${key}/${records[key].id}`,
+          );
+          assert.equal(r.statusCode, 204, `${key}: ${r.body}`);
+          assert.equal(
+            (await req("GET", `/management/${key}/${records[key].id}`)).json()
+              .active,
+            false,
+            key,
+          );
+        }
+        assert.equal(
+          (
+            await pool.query("SELECT count(*)::int n FROM nodes WHERE id=$1", [
+              node.id,
+            ])
+          ).rows[0].n,
+          1,
+        );
+      },
+    );
+  } finally {
+    await app.close();
+    await pool.end();
+    await root.query(`DROP SCHEMA ${schema} CASCADE`);
+    await root.end();
+  }
+});

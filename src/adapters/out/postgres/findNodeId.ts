@@ -12,7 +12,7 @@ import type { PoolClient } from "pg";
  */
 export async function findNodeId(client: PoolClient, nodeCode: string): Promise<string | null> {
   const { rows } = await client.query<{ id: string }>(
-    `SELECT id FROM nodes WHERE node_code = $1`,
+    `SELECT id FROM nodes WHERE node_code = $1 AND active`,
     [nodeCode]
   );
   return rows[0]?.id ?? null;

@@ -23,10 +23,20 @@ function bearerToken(request: FastifyRequest): string | null {
 export function requireRole(...roles: UserRole[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const token = bearerToken(request);
-    const payload = token ? verifyToken(token) : null;
+    const payload = request.actor
+      ? {
+          id: request.actor.id,
+          email: request.actor.email,
+          role: request.actor.role,
+        }
+      : token
+        ? verifyToken(token)
+        : null;
 
     if (!payload) {
-      return reply.code(401).send({ error: "no autenticado", message: "Falta un token válido." });
+      return reply
+        .code(401)
+        .send({ error: "no autenticado", message: "Falta un token válido." });
     }
 
     if (roles.length > 0 && !roles.includes(payload.role)) {

@@ -15,7 +15,7 @@ import { Client } from "pg";
 
 import { hashPassword } from "../src/domain/password.js";
 
-const ROLES = ["control_center", "operator", "cliente"] as const;
+const ROLES = ["admin", "control_center", "operator", "cliente", "technician", "auditor"] as const;
 type Role = (typeof ROLES)[number];
 
 function askPassword(prompt: string): Promise<string> {

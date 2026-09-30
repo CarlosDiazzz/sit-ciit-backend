@@ -1,3 +1,5 @@
+import { registerAccess } from "./adapters/in/http/management/access.js";
+import { registerManagementRoutes } from "./adapters/in/http/management/routes.js";
 import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
@@ -50,19 +52,22 @@ const weatherClient = new OpenMeteoWeatherClient();
 const commandRepository = new PgCommandRepository(pool);
 const userRepository = new PgUserRepository(pool);
 const nodeCredentialRepository = new PgNodeCredentialRepository(pool);
-const telemetryBroadcaster = new SocketTelemetryBroadcaster(app.server);
-const ingestTelemetry = makeIngestTelemetry(telemetryRepository, telemetryBroadcaster);
+const telemetryBroadcaster = new SocketTelemetryBroadcaster(app.server, pool);
+const ingestTelemetry = makeIngestTelemetry(
+  telemetryRepository,
+  telemetryBroadcaster,
+);
 const ingestHeartbeat = makeIngestHeartbeat(
   nodeStateRepository,
   eventRepository,
   telemetryBroadcaster,
-  app.log
+  app.log,
 );
 const evaluateLiveness = makeEvaluateLiveness(
   nodeStateRepository,
   eventRepository,
   telemetryBroadcaster,
-  app.log
+  app.log,
 );
 const ingestEvent = makeIngestEvent(eventRepository, telemetryBroadcaster);
 const evaluateUnitWeatherRisk = makeEvaluateUnitWeatherRisk(
@@ -72,7 +77,7 @@ const evaluateUnitWeatherRisk = makeEvaluateUnitWeatherRisk(
   weatherRepository,
   eventRepository,
   telemetryBroadcaster,
-  app.log
+  app.log,
 );
 const login = makeLogin(userRepository);
 const verifyNodeSecret = makeVerifyNodeSecret(nodeCredentialRepository);
@@ -85,7 +90,7 @@ const mqttClient = startTelemetrySubscriber(
   },
   ingestTelemetry,
   verifyNodeSecret,
-  app.log
+  app.log,
 );
 
 // El dashboard (Vite) corre en otro puerto en dev, asi que el navegador
@@ -96,27 +101,43 @@ await app.register(cors, { origin: true });
 
 // Un solo cliente MQTT por proceso: el broker desconecta clientIds
 // duplicados (ADR 0002 de sit-ciit-infra).
-attachHeartbeatSubscriber(mqttClient, ingestHeartbeat, verifyNodeSecret, app.log);
-attachAckSubscriber(mqttClient, commandRepository, telemetryBroadcaster, verifyNodeSecret, app.log);
+attachHeartbeatSubscriber(
+  mqttClient,
+  ingestHeartbeat,
+  verifyNodeSecret,
+  app.log,
+);
+attachAckSubscriber(
+  mqttClient,
+  commandRepository,
+  telemetryBroadcaster,
+  verifyNodeSecret,
+  app.log,
+);
 
 const issueCommand = makeIssueCommand(
   commandRepository,
   new MqttCommandPublisher(mqttClient),
-  app.log
+  app.log,
 );
 attachEventSubscriber(mqttClient, ingestEvent, verifyNodeSecret, app.log);
 const livenessTimer = startLivenessWatcher(evaluateLiveness, app.log);
-const weatherRiskTimer = startWeatherRiskWatcher(evaluateUnitWeatherRisk, app.log);
+const weatherRiskTimer = startWeatherRiskWatcher(
+  evaluateUnitWeatherRisk,
+  app.log,
+);
 
 app.get("/health", async () => ({ status: "ok" }));
+registerAccess(app, pool);
+registerManagementRoutes(app, pool, issueCommand);
 registerTelemetryRoutes(app, pool);
-registerUnitRoutes(app, unitRepository);
-registerCommandRoutes(app, issueCommand, commandRepository);
-registerEventRoutes(app, eventRepository);
+registerUnitRoutes(app, unitRepository, pool);
+registerCommandRoutes(app, issueCommand, commandRepository, pool);
+registerEventRoutes(app, eventRepository, pool);
 registerWeatherRoutes(app, unitRepository, weatherRepository);
 registerAuthRoutes(app, login);
-registerUserRoutes(app, userRepository);
-registerNodeRoutes(app, nodeCredentialRepository);
+registerUserRoutes(app, userRepository, pool);
+registerNodeRoutes(app, nodeCredentialRepository, pool);
 
 const port = Number(process.env.PORT ?? 3000);
 
