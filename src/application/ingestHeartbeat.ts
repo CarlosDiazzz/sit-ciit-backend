@@ -44,6 +44,16 @@ export function makeIngestHeartbeat(
       isOnline: true,
     });
 
+    // El primer heartbeat de un nodo aprovisionado no es una recuperación.
+    if (antes.lastHeartbeatAt !== null) {
+      const ts = new Date();
+      await events.record({
+        unitId: antes.unitId, nodeId: antes.id,
+        kind: "signal_recovered", severity: "info", ts,
+      });
+      broadcaster.event({ unitId: msg.unitId, nodeId: msg.nodeId,
+        kind: "signal_recovered", severity: "info", ts: ts.getTime() });
+    }
     await reassignActive(antes.unitId, msg.unitId);
   };
 

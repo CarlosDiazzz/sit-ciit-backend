@@ -199,3 +199,14 @@ cuenta y los manifiestos/asignaciones representan relaciones, no listas dentro d
 columnas. Las versiones de ruta y configuración se guardan como hechos históricos
 al iniciar un viaje o aplicar un perfil, conservando el modelo actual de comandos
 con ACK y la ingesta original de telemetría.
+
+## Historial de conectividad
+
+`0011_add_signal_lost_event.sql` y `0012_signal_recovered.sql` permiten guardar
+las pérdidas detectadas por ausencia de heartbeat y las recuperaciones observadas
+al recibir un nuevo heartbeat. El primer heartbeat no cuenta como recuperación.
+`GET /node-history/connectivity` consulta un nodo autorizado en periodos de hasta
+31 días (máximo 200 eventos). La caída conserva su última ubicación conocida;
+el regreso utiliza la primera captura GPS posterior dentro de cinco minutos,
+antes de una nueva caída. Si no hay GPS, la posición queda ausente. No se
+reconstruyen recuperaciones anteriores ni trayectos durante la desconexión.

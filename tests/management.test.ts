@@ -1,3 +1,6 @@
+import { makeIngestHeartbeat } from "../src/application/ingestHeartbeat.js";
+import { PgNodeStateRepository } from "../src/adapters/out/postgres/PgNodeStateRepository.js";
+import { heartbeatMessageSchema } from "../src/adapters/in/mqtt/messageSchemas.js";
 import { registerNodeHistoryRoutes } from "../src/adapters/in/http/nodeHistoryRoutes.js";
 import "dotenv/config";
 import { test } from "node:test";
@@ -472,6 +475,42 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
         );
       },
     );
+    await t.test("conectividad: recuperación real, GPS posterior, límites y permisos", async () => {
+      const eventRepo = new PgEventRepository(pool);
+      const ingest = makeIngestHeartbeat(new PgNodeStateRepository(pool), eventRepo,
+        {nodeStatus:()=>{},activeNode:()=>{},event:()=>{},commandUpdate:()=>{}}, {info:()=>{}});
+      const heartbeat = heartbeatMessageSchema.parse({contractVersion:"1.2.0",msgId:randomUUID(),
+        nodeId:"test-node",unitId:"unit-test",role:"primary",nodeSecret:node.secret,
+        seq:0,ts:Date.now(),type:"heartbeat",pendingOutbox:0,samplingMs:1000,capabilities:["gps"],mode:"normal"});
+      await pool.query("UPDATE nodes SET is_online=false,last_heartbeat_at=NULL WHERE id=$1",[node.id]);
+      await ingest(heartbeat);
+      assert.equal((await pool.query("SELECT id FROM events WHERE node_id=$1 AND kind='signal_recovered'",[node.id])).rowCount,0);
+      await pool.query("UPDATE nodes SET is_online=false WHERE id=$1",[node.id]);
+      await ingest({...heartbeat,msgId:randomUUID()});
+      await ingest({...heartbeat,msgId:randomUUID()});
+      const recovered = (await pool.query("SELECT * FROM events WHERE node_id=$1 AND kind='signal_recovered'",[node.id])).rows;
+      assert.equal(recovered.length,1);
+      const ts = recovered[0].ts.getTime();
+      await pool.query("INSERT INTO telemetry(msg_id,node_id,seq,ts,gps_lat,gps_lon) VALUES($1,$2,1,$3,44,44),($4,$2,2,$5,0,0)",
+        [randomUUID(),node.id,new Date(ts-1000),randomUUID(),new Date(ts+1000)]);
+      const params = new URLSearchParams({nodeId:node.id,from:new Date(ts-60000).toISOString(),to:new Date(ts+60000).toISOString(),limit:"200"});
+      const path = `/node-history/connectivity?${params}`;
+      const result = await req("GET",path,undefined,"operator");
+      assert.equal(result.statusCode,200,result.body);
+      assert.equal(result.json().items[0].gpsLat,0);
+      assert.equal(result.json().items[0].gpsLon,0);
+      assert.equal(new Date(result.json().items[0].positionTs).getTime(),ts+1000);
+      await pool.query("DELETE FROM telemetry WHERE node_id=$1 AND ts>$2",[node.id,new Date(ts)]);
+      assert.equal((await req("GET",path)).json().items[0].gpsLat,null);
+      assert.equal((await req("GET",path,undefined,"cliente")).statusCode,403);
+      const foreignNode = (await req("POST","/nodes",{nodeCode:"connectivity-foreign",unitCode:"other-unit",role:"backup"})).json();
+      params.set("nodeId",foreignNode.id);
+      assert.equal((await req("GET",`/node-history/connectivity?${params}`,undefined,"operator")).statusCode,403);
+      params.set("nodeId",node.id);params.set("from",new Date(ts+120000).toISOString());
+      assert.equal((await req("GET",`/node-history/connectivity?${params}`)).statusCode,400);
+      await pool.query("DELETE FROM telemetry WHERE node_id=$1",[node.id]);
+      await pool.query("DELETE FROM events WHERE node_id=$1 AND kind='signal_recovered'",[node.id]);
+    });
     await t.test(
       "historial por nodo: filtros, permisos, paginación estable y nodos archivados",
       async () => {
