@@ -2,6 +2,7 @@ import type { MqttClient } from "mqtt";
 import type { FastifyBaseLogger } from "fastify";
 
 import type { IngestHeartbeat } from "../../../application/ingestHeartbeat.js";
+import type { VerifyNodeSecret } from "../../../application/verifyNodeSecret.js";
 import { heartbeatMessageSchema } from "./messageSchemas.js";
 
 const HEARTBEAT_TOPIC_FILTER = "sitciit/+/heartbeat";
@@ -14,6 +15,7 @@ const HEARTBEAT_TOPIC_FILTER = "sitciit/+/heartbeat";
 export function attachHeartbeatSubscriber(
   client: MqttClient,
   ingestHeartbeat: IngestHeartbeat,
+  verifyNodeSecret: VerifyNodeSecret,
   logger: FastifyBaseLogger
 ): void {
   function subscribe() {
@@ -47,6 +49,12 @@ export function attachHeartbeatSubscriber(
         { topic, issues: parsed.error.issues },
         "mqtt: heartbeat no cumple el contrato, descartado"
       );
+      return;
+    }
+
+    const okSecret = await verifyNodeSecret(parsed.data.nodeId, parsed.data.nodeSecret);
+    if (!okSecret) {
+      logger.warn({ topic, nodeId: parsed.data.nodeId }, "mqtt: secreto de nodo inválido, descartado");
       return;
     }
 

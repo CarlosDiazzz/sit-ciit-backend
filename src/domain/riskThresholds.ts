@@ -1,8 +1,12 @@
 import type { EventSeverity } from "../contract/contract.js";
 
 /** Categorías de negocio del cliente — no viene de un sensor, se declara
- *  por unidad desde el dashboard (ver UnitRepository.setCargoCategory). */
-export type CargoCategory = "agricola" | "construccion" | "quimico";
+ *  por unidad desde el dashboard (ver UnitRepository.setCargoCategory).
+ *  'sin_carga' es un estado explícito ("esta unidad va vacía ahorita"),
+ *  distinto de NULL (todavía no se declaró nada). No hay reglas de
+ *  riesgo para 'sin_carga' en RISK_RULES — evaluateWeatherRisk devuelve
+ *  un arreglo vacío para esa categoría sin necesitar un caso especial. */
+export type CargoCategory = "agricola" | "construccion" | "quimico" | "sin_carga";
 
 /** Dato ambiental real (Open-Meteo) en la última posición GPS conocida de
  *  la unidad. Importante: esto es clima AMBIENTAL de la ruta, no la

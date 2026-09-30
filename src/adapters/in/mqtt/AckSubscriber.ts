@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 
 import type { CommandRepository } from "../../../domain/ports/CommandRepository.js";
 import type { StatusBroadcaster } from "../../../domain/ports/TelemetryBroadcaster.js";
+import type { VerifyNodeSecret } from "../../../application/verifyNodeSecret.js";
 import { ackMessageSchema } from "./messageSchemas.js";
 
 const ACK_TOPIC_FILTER = "sitciit/+/ack";
@@ -16,6 +17,7 @@ export function attachAckSubscriber(
   client: MqttClient,
   commands: CommandRepository,
   broadcaster: StatusBroadcaster,
+  verifyNodeSecret: VerifyNodeSecret,
   logger: FastifyBaseLogger
 ): void {
   function subscribe() {
@@ -52,6 +54,13 @@ export function attachAckSubscriber(
     }
 
     const ack = parsed.data;
+
+    const okSecret = await verifyNodeSecret(ack.nodeId, ack.nodeSecret);
+    if (!okSecret) {
+      logger.warn({ topic, nodeId: ack.nodeId }, "mqtt: secreto de nodo inválido, descartado");
+      return;
+    }
+
     try {
       const result = await commands.applyAck({
         cmdId: ack.cmdId,

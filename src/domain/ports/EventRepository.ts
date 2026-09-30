@@ -32,7 +32,7 @@ export interface BackendEvent {
  * Evento que sí llega por MQTT (impact/door_open/door_closed/rollover/
  * threshold_exceeded). A diferencia de BackendEvent: trae msgId (se
  * deduplica, reintentos QoS1) y nodeCode/unitCode en vez de UUID — el
- * repositorio los resuelve internamente (mismo `ensureNode` que telemetry).
+ * repositorio los resuelve internamente (mismo `findNodeId` que telemetry).
  */
 export interface DeviceEventToRecord {
   msgId: string;

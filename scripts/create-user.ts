@@ -1,7 +1,9 @@
-// Alta de usuarios del centro de control.
+// Alta de usuarios. Sigue siendo el único camino para crear el primer
+// control_center (el CRUD vía HTTP requiere ya ser control_center para
+// usarlo — bootstrap por CLI, no por un endpoint sin proteger).
 //
 // Uso:
-//   npm run create-user -- <email> <control_center|operator>
+//   npm run create-user -- <email> <control_center|operator|cliente>
 //
 // Pide la contraseña de forma interactiva para no dejarla en el
 // historial del shell. Si el correo ya existe, actualiza rol y
@@ -9,37 +11,12 @@
 
 import "dotenv/config";
 import { createInterface } from "node:readline";
-import { scrypt as scryptCb, randomBytes, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
 import { Client } from "pg";
 
-const scrypt = promisify(scryptCb) as (
-  password: string,
-  salt: Buffer,
-  keylen: number
-) => Promise<Buffer>;
+import { hashPassword } from "../src/domain/password.js";
 
-const ROLES = ["control_center", "operator"] as const;
+const ROLES = ["control_center", "operator", "cliente"] as const;
 type Role = (typeof ROLES)[number];
-
-/** scrypt con sal aleatoria por usuario. Formato: scrypt$<sal>$<hash>,
- *  ambos en base64, para poder cambiar de algoritmo más adelante sin
- *  romper los registros existentes. */
-export async function hashPassword(plain: string): Promise<string> {
-  const salt = randomBytes(16);
-  const key = await scrypt(plain, salt, 64);
-  return `scrypt$${salt.toString("base64")}$${key.toString("base64")}`;
-}
-
-export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
-  const [algo, saltB64, keyB64] = stored.split("$");
-  if (algo !== "scrypt" || !saltB64 || !keyB64) return false;
-  const key = await scrypt(plain, Buffer.from(saltB64, "base64"), 64);
-  const expected = Buffer.from(keyB64, "base64");
-  // Comparación en tiempo constante: evita filtrar el hash por el tiempo
-  // que tarda en fallar.
-  return key.length === expected.length && timingSafeEqual(key, expected);
-}
 
 function askPassword(prompt: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -55,7 +32,7 @@ async function main() {
   const [email, role] = process.argv.slice(2);
 
   if (!email || !role) {
-    console.error("Uso: npm run create-user -- <email> <control_center|operator>");
+    console.error("Uso: npm run create-user -- <email> <control_center|operator|cliente>");
     process.exit(1);
   }
   if (!ROLES.includes(role as Role)) {

@@ -6,7 +6,7 @@ import type {
   TelemetryRepository,
   UnitPosition,
 } from "../../../domain/ports/TelemetryRepository.js";
-import { ensureNode } from "./ensureNode.js";
+import { findNodeId } from "./findNodeId.js";
 
 export class PgTelemetryRepository implements TelemetryRepository {
   constructor(private readonly pool: Pool) {}
@@ -16,7 +16,11 @@ export class PgTelemetryRepository implements TelemetryRepository {
     try {
       await client.query("BEGIN");
 
-      const nodeId = await ensureNode(client, reading.node);
+      const nodeId = await findNodeId(client, reading.node.nodeCode);
+      if (!nodeId) {
+        await client.query("ROLLBACK");
+        return { inserted: false };
+      }
 
       const { rows } = await client.query(
         `INSERT INTO telemetry (

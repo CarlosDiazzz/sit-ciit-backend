@@ -5,6 +5,7 @@ import type {
   NodeLiveness,
   NodeStateRepository,
 } from "../../../domain/ports/NodeStateRepository.js";
+import { findNodeId } from "./findNodeId.js";
 
 interface LivenessRow {
   id: string;
@@ -44,36 +45,27 @@ export class PgNodeStateRepository implements NodeStateRepository {
     try {
       await client.query("BEGIN");
 
-      // Mismo upsert que la ingesta de telemetría: el contrato no define
-      // un flujo de alta de nodos, así que el primer mensaje de un
-      // nodeId nuevo lo da de alta.
-      const { rows: unitRows } = await client.query<{ id: string }>(
-        `INSERT INTO units (unit_code) VALUES ($1)
-         ON CONFLICT (unit_code) DO UPDATE SET unit_code = units.unit_code
-         RETURNING id`,
-        [state.node.unitCode]
-      );
-      const unitId = unitRows[0]!.id;
+      // El nodo ya debe existir (dado de alta por control_center, su
+      // secreto ya se verificó antes de llegar aquí) — ya no se
+      // auto-registra con el primer heartbeat que llegue.
+      const nodeId = await findNodeId(client, state.node.nodeCode);
+      if (!nodeId) {
+        await client.query("ROLLBACK");
+        return;
+      }
 
-      const { rows: nodeRows } = await client.query<{ id: string }>(
-        `INSERT INTO nodes (node_code, unit_id, role, is_online,
-                            last_heartbeat_at, battery_pct, pending_outbox,
-                            sampling_ms, mode)
-         VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8)
-         ON CONFLICT (node_code) DO UPDATE SET
-           unit_id = EXCLUDED.unit_id,
-           role = EXCLUDED.role,
+      const { rows: nodeRows } = await client.query<{ unit_id: string }>(
+        `UPDATE nodes SET
            is_online = true,
-           last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-           battery_pct = EXCLUDED.battery_pct,
-           pending_outbox = EXCLUDED.pending_outbox,
-           sampling_ms = EXCLUDED.sampling_ms,
-           mode = EXCLUDED.mode
-         RETURNING id`,
+           last_heartbeat_at = $2,
+           battery_pct = $3,
+           pending_outbox = $4,
+           sampling_ms = $5,
+           mode = $6
+         WHERE id = $1
+         RETURNING unit_id`,
         [
-          state.node.nodeCode,
-          unitId,
-          state.node.role,
+          nodeId,
           state.receivedAt,
           state.batteryPct ?? null,
           state.pendingOutbox,
@@ -81,7 +73,7 @@ export class PgNodeStateRepository implements NodeStateRepository {
           state.mode,
         ]
       );
-      const nodeId = nodeRows[0]!.id;
+      const unitId = nodeRows[0]!.unit_id;
 
       // Las capabilities se reemplazan enteras: el heartbeat manda la
       // lista completa de sensores disponibles ahora mismo, y un sensor

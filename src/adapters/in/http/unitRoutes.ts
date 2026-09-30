@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { UnitRepository } from "../../../domain/ports/UnitRepository.js";
 
 const cargoCategoryBodySchema = z.object({
-  category: z.enum(["agricola", "construccion", "quimico"]),
+  category: z.enum(["agricola", "construccion", "quimico", "sin_carga"]),
 });
 
 /** Unidades con sus nodos y el estado actual de cada uno. Es lo que el

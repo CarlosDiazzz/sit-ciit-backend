@@ -2,6 +2,7 @@ import type { MqttClient } from "mqtt";
 import type { FastifyBaseLogger } from "fastify";
 
 import type { IngestEvent } from "../../../application/ingestEvent.js";
+import type { VerifyNodeSecret } from "../../../application/verifyNodeSecret.js";
 import { eventMessageSchema } from "./messageSchemas.js";
 
 const EVENT_TOPIC_FILTER = "sitciit/+/event";
@@ -14,6 +15,7 @@ const EVENT_TOPIC_FILTER = "sitciit/+/event";
 export function attachEventSubscriber(
   client: MqttClient,
   ingestEvent: IngestEvent,
+  verifyNodeSecret: VerifyNodeSecret,
   logger: FastifyBaseLogger
 ): void {
   function subscribe() {
@@ -46,6 +48,12 @@ export function attachEventSubscriber(
         { topic, issues: parsed.error.issues },
         "mqtt: event no cumple el contrato, descartado"
       );
+      return;
+    }
+
+    const okSecret = await verifyNodeSecret(parsed.data.nodeId, parsed.data.nodeSecret);
+    if (!okSecret) {
+      logger.warn({ topic, nodeId: parsed.data.nodeId }, "mqtt: secreto de nodo inválido, descartado");
       return;
     }
 

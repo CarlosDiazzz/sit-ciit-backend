@@ -7,7 +7,7 @@ import type {
   EventListItem,
   EventRepository,
 } from "../../../domain/ports/EventRepository.js";
-import { ensureNode } from "./ensureNode.js";
+import { findNodeId } from "./findNodeId.js";
 
 interface EventRow {
   id: string;
@@ -71,9 +71,13 @@ export class PgEventRepository implements EventRepository {
     try {
       await client.query("BEGIN");
 
-      const nodeId = await ensureNode(client, event.node);
+      const nodeId = await findNodeId(client, event.node.nodeCode);
+      if (!nodeId) {
+        await client.query("ROLLBACK");
+        return { inserted: false };
+      }
 
-      // unit_id sale de nodes.unit_id (ya resuelto por ensureNode) en vez
+      // unit_id sale de nodes.unit_id (ya resuelto por findNodeId) en vez
       // de otro parámetro: evita mandar unitCode y unitId del mismo
       // insert por dos caminos que podrían desincronizarse.
       const { rows } = await client.query<{ id: string }>(

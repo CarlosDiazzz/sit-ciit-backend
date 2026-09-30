@@ -2,6 +2,7 @@ import mqtt, { type MqttClient } from "mqtt";
 import type { FastifyBaseLogger } from "fastify";
 
 import type { IngestTelemetry } from "../../../application/ingestTelemetry.js";
+import type { VerifyNodeSecret } from "../../../application/verifyNodeSecret.js";
 import { telemetryMessageSchema } from "./messageSchemas.js";
 
 const TELEMETRY_TOPIC_FILTER = "sitciit/+/telemetry";
@@ -15,6 +16,7 @@ export interface MqttConnectionOptions {
 export function startTelemetrySubscriber(
   opts: MqttConnectionOptions,
   ingestTelemetry: IngestTelemetry,
+  verifyNodeSecret: VerifyNodeSecret,
   logger: FastifyBaseLogger
 ): MqttClient {
   const client = mqtt.connect(opts.url, {
@@ -59,6 +61,12 @@ export function startTelemetrySubscriber(
         { topic, issues: parsed.error.issues },
         "mqtt: mensaje no cumple el contrato, descartado"
       );
+      return;
+    }
+
+    const okSecret = await verifyNodeSecret(parsed.data.nodeId, parsed.data.nodeSecret);
+    if (!okSecret) {
+      logger.warn({ topic, nodeId: parsed.data.nodeId }, "mqtt: secreto de nodo inválido, descartado");
       return;
     }
 

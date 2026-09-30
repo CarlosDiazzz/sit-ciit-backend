@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// Espejo en Zod de contract.ts / contract.schema.json (v1.1.0), acotado a
+// Espejo en Zod de contract.ts / contract.schema.json (v1.3.0), acotado a
 // los mensajes que este suscriptor procesa. Si el contrato sube de
 // versión, actualizar aquí también.
 
@@ -28,6 +28,7 @@ export const telemetryMessageSchema = z.object({
   nodeId: z.string().min(1),
   unitId: z.string().min(1),
   role: z.enum(["primary", "backup"]),
+  nodeSecret: z.string().min(1),
   seq: z.number().int().min(0),
   ts: z.number().int().min(0),
   type: z.literal("telemetry"),
@@ -48,6 +49,7 @@ export const heartbeatMessageSchema = z.object({
   nodeId: z.string().min(1),
   unitId: z.string().min(1),
   role: z.enum(["primary", "backup"]),
+  nodeSecret: z.string().min(1),
   seq: z.number().int().min(0),
   ts: z.number().int().min(0),
   type: z.literal("heartbeat"),
@@ -71,6 +73,7 @@ export const eventMessageSchema = z.object({
   nodeId: z.string().min(1),
   unitId: z.string().min(1),
   role: z.enum(["primary", "backup"]),
+  nodeSecret: z.string().min(1),
   seq: z.number().int().min(0),
   ts: z.number().int().min(0),
   type: z.literal("event"),
@@ -101,6 +104,7 @@ export const ackMessageSchema = z.object({
   nodeId: z.string().min(1),
   unitId: z.string().min(1),
   role: z.enum(["primary", "backup"]),
+  nodeSecret: z.string().min(1),
   seq: z.number().int().min(0),
   ts: z.number().int().min(0),
   type: z.literal("ack"),

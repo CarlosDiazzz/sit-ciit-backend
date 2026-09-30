@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import type { Pool } from "pg";
 import { z } from "zod";
 
 import type { IssueCommand } from "../../../application/issueCommand.js";
 import type { CommandRepository } from "../../../domain/ports/CommandRepository.js";
 import type { IssuerRole } from "../../../contract/contract.js";
+import { requireRole } from "./authGuard.js";
 
 const issueSchema = z.object({
   targetNodeId: z.string().min(1),
@@ -19,49 +19,20 @@ const issueSchema = z.object({
   params: z.record(z.unknown()).optional(),
 });
 
-/**
- * Identifica quién emite el comando.
- *
- * El login con JWT es Fase 6. Hasta entonces el emisor viaja en la
- * cabecera `x-user-email`, que se valida contra la tabla `users`: el
- * usuario debe existir y su rol sale de la base, no de la petición —
- * así el cliente no puede declararse `control_center` por su cuenta.
- *
- * Esto NO es autenticación (no hay contraseña de por medio) y debe
- * reemplazarse por el JWT en Fase 6; la validación de autoridad que
- * viene después sí es la definitiva.
- */
-async function resolveIssuer(
-  pool: Pool,
-  email: unknown
-): Promise<{ userId: string; role: IssuerRole } | null> {
-  if (typeof email !== "string" || email.length === 0) return null;
-  const { rows } = await pool.query<{ id: string; role: IssuerRole }>(
-    `SELECT id, role FROM users WHERE email = $1`,
-    [email]
-  );
-  const user = rows[0];
-  return user ? { userId: user.id, role: user.role } : null;
-}
-
 export function registerCommandRoutes(
   app: FastifyInstance,
-  pool: Pool,
   issueCommand: IssueCommand,
   commands: CommandRepository
 ): void {
-  app.post("/commands", async (request, reply) => {
+  app.post("/commands", { preHandler: requireRole("control_center", "operator") }, async (request, reply) => {
     const parsed = issueSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "cuerpo inválido", issues: parsed.error.issues });
     }
 
-    const issuer = await resolveIssuer(pool, request.headers["x-user-email"]);
-    if (!issuer) {
-      return reply
-        .code(401)
-        .send({ error: "no identificado", message: "Falta la cabecera x-user-email o el usuario no existe." });
-    }
+    // requireRole ya garantizó que el rol es control_center u operator —
+    // cliente nunca llega aquí, así que el cast a IssuerRole es seguro.
+    const issuer = { userId: request.authUser!.id, role: request.authUser!.role as IssuerRole };
 
     const result = await issueCommand({
       targetNodeCode: parsed.data.targetNodeId,
