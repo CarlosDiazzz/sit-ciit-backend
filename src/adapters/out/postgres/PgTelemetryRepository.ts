@@ -73,8 +73,8 @@ export class PgTelemetryRepository implements TelemetryRepository {
   }
 
   async findLatestPosition(unitId: string): Promise<UnitPosition | null> {
-    const { rows } = await this.pool.query<{ gps_lat: string; gps_lon: string }>(
-      `SELECT t.gps_lat, t.gps_lon
+    const { rows } = await this.pool.query<{ gps_lat: string; gps_lon: string; gps_speed_ms: string | null }>(
+      `SELECT t.gps_lat, t.gps_lon, t.gps_speed_ms
          FROM telemetry t
          JOIN nodes n ON n.id = t.node_id
         WHERE n.unit_id = $1 AND t.gps_lat IS NOT NULL AND t.gps_lon IS NOT NULL
@@ -84,12 +84,16 @@ export class PgTelemetryRepository implements TelemetryRepository {
     );
     const row = rows[0];
     if (!row) return null;
-    return { lat: Number(row.gps_lat), lon: Number(row.gps_lon) };
+    return {
+      lat: Number(row.gps_lat),
+      lon: Number(row.gps_lon),
+      speedMs: row.gps_speed_ms === null ? null : Number(row.gps_speed_ms),
+    };
   }
 
   async findLatestPositionForNode(nodeId: string): Promise<UnitPosition | null> {
-    const { rows } = await this.pool.query<{ gps_lat: string; gps_lon: string }>(
-      `SELECT t.gps_lat, t.gps_lon
+    const { rows } = await this.pool.query<{ gps_lat: string; gps_lon: string; gps_speed_ms: string | null }>(
+      `SELECT t.gps_lat, t.gps_lon, t.gps_speed_ms
          FROM telemetry t
         WHERE t.node_id = $1 AND t.gps_lat IS NOT NULL AND t.gps_lon IS NOT NULL
         ORDER BY t.ts DESC
@@ -98,6 +102,10 @@ export class PgTelemetryRepository implements TelemetryRepository {
     );
     const row = rows[0];
     if (!row) return null;
-    return { lat: Number(row.gps_lat), lon: Number(row.gps_lon) };
+    return {
+      lat: Number(row.gps_lat),
+      lon: Number(row.gps_lon),
+      speedMs: row.gps_speed_ms === null ? null : Number(row.gps_speed_ms),
+    };
   }
 }

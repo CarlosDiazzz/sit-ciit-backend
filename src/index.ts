@@ -20,6 +20,10 @@ import { PgNodeStateRepository } from "./adapters/out/postgres/PgNodeStateReposi
 import { PgEventRepository } from "./adapters/out/postgres/PgEventRepository.js";
 import { PgWeatherRepository } from "./adapters/out/postgres/PgWeatherRepository.js";
 import { OpenMeteoWeatherClient } from "./adapters/out/weather/OpenMeteoWeatherClient.js";
+import { PgCellTowerRepository } from "./adapters/out/postgres/PgCellTowerRepository.js";
+import { OpenCelliDClient } from "./adapters/out/coverage/OpenCelliDClient.js";
+import { makeGetCellTowers } from "./application/getCellTowers.js";
+import { registerCoverageRoutes } from "./adapters/in/http/coverageRoutes.js";
 import { PgCommandRepository } from "./adapters/out/postgres/PgCommandRepository.js";
 import { PgUserRepository } from "./adapters/out/postgres/PgUserRepository.js";
 import { PgNodeCredentialRepository } from "./adapters/out/postgres/PgNodeCredentialRepository.js";
@@ -50,6 +54,9 @@ const nodeStateRepository = new PgNodeStateRepository(pool);
 const eventRepository = new PgEventRepository(pool);
 const weatherRepository = new PgWeatherRepository(pool);
 const weatherClient = new OpenMeteoWeatherClient();
+const cellTowerRepository = new PgCellTowerRepository(pool);
+const cellTowerClient = new OpenCelliDClient(process.env.OPENCELLID_API_KEY ?? "");
+const getCellTowers = makeGetCellTowers(cellTowerRepository, cellTowerClient, app.log);
 const commandRepository = new PgCommandRepository(pool);
 const userRepository = new PgUserRepository(pool);
 const nodeCredentialRepository = new PgNodeCredentialRepository(pool);
@@ -141,6 +148,7 @@ registerWeatherRoutes(app, unitRepository, weatherRepository);
 registerAuthRoutes(app, login);
 registerUserRoutes(app, userRepository, pool);
 registerNodeRoutes(app, nodeCredentialRepository, pool);
+registerCoverageRoutes(app, getCellTowers);
 
 const port = Number(process.env.PORT ?? 3000);
 

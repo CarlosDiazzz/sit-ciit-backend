@@ -65,6 +65,10 @@ export function makeEvaluateLiveness(
       // is_online=true, así que esto dispara una sola vez por caída, no
       // en cada pasada del vigilante mientras sigue sin señal.
       const posicion = await telemetry.findLatestPositionForNode(nodo.id);
+      // La velocidad real del ultimo fix viaja en `details` (ya es
+      // jsonb, no hace falta migracion) y en el broadcast — el mapa la
+      // usa para estimar el avance del nodo mientras sigue sin señal
+      // (distancia = velocidad real x tiempo transcurrido, sin ML).
       await events.record({
         unitId: nodo.unitId,
         nodeId: nodo.id,
@@ -72,6 +76,7 @@ export function makeEvaluateLiveness(
         severity: "warning",
         ts: new Date(),
         gps: posicion ?? undefined,
+        details: posicion?.speedMs != null ? { speedMs: posicion.speedMs } : undefined,
       });
       broadcaster.event({
         unitId: nodo.unitCode,
@@ -79,6 +84,7 @@ export function makeEvaluateLiveness(
         kind: "signal_lost",
         severity: "warning",
         gps: posicion ?? undefined,
+        speedMs: posicion?.speedMs ?? undefined,
         ts: Date.now(),
       });
     }

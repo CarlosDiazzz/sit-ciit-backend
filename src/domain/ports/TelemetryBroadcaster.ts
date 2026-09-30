@@ -46,6 +46,9 @@ export interface EventPayload {
   value?: number;
   threshold?: number;
   gps?: { lat: number; lon: number };
+  /** Velocidad real del ultimo fix GPS — hoy solo la usa signal_lost,
+   *  para que el mapa pueda estimar el avance mientras sigue sin señal. */
+  speedMs?: number;
   ts: number;
 }
 

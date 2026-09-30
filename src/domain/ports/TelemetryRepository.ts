@@ -27,6 +27,10 @@ export interface SaveTelemetryResult {
 export interface UnitPosition {
   lat: number;
   lon: number;
+  /** Velocidad real del GPS en ese fix — null si el dispositivo no la
+   *  reportó ese ciclo. La usa la estimación de posición mientras un
+   *  nodo está sin señal (ver evaluateLiveness). */
+  speedMs: number | null;
 }
 
 export interface TelemetryRepository {
