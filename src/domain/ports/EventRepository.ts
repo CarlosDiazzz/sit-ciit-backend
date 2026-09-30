@@ -56,6 +56,12 @@ export interface EventListItem {
   id: string;
   unitId: string;
   nodeId: string | null;
+  /** Codigo del contrato ("unit-01"): lo que el operador reconoce. Los
+   *  UUID de arriba siguen ahi porque la vista agrupa por ellos. */
+  unitCode?: string | null;
+  /** Codigo del nodo ("unit-01-a"). NULL en eventos de unidad, que
+   *  comparan primary contra backup. */
+  nodeCode?: string | null;
   kind: AnyEventKind;
   severity: EventSeverity;
   value: number | null;

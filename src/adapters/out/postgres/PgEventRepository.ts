@@ -13,6 +13,8 @@ interface EventRow {
   id: string;
   unit_id: string;
   node_id: string | null;
+  unit_code?: string;
+  node_code?: string | null;
   kind: EventListItem["kind"];
   severity: EventListItem["severity"];
   value: string | null;
@@ -34,6 +36,11 @@ function toListItem(r: EventRow): EventListItem {
     id: r.id,
     unitId: r.unit_id,
     nodeId: r.node_id,
+    // Codigos del contrato ("unit-01", "unit-01-a"): son lo que el
+    // operador reconoce. Los UUID se conservan porque la vista agrupa
+    // por ellos, pero un UUID en pantalla no dice nada.
+    unitCode: r.unit_code ?? null,
+    nodeCode: r.node_code ?? null,
     kind: r.kind,
     severity: r.severity,
     // double precision de Postgres puede llegar como string por el driver.
@@ -123,9 +130,12 @@ export class PgEventRepository implements EventRepository {
 
   async listRecent(limit: number): Promise<EventListItem[]> {
     const { rows } = await this.pool.query<EventRow>(
-      `SELECT ${EVENT_COLUMNS}
-         FROM events
-        ORDER BY ts DESC
+      `SELECT ${EVENT_COLUMNS.split(', ').map((c) => `e.${c.trim()}`).join(', ')},
+              u.unit_code, n.node_code
+         FROM events e
+         JOIN units u ON u.id = e.unit_id
+         LEFT JOIN nodes n ON n.id = e.node_id
+        ORDER BY e.ts DESC
         LIMIT $1`,
       [limit]
     );
