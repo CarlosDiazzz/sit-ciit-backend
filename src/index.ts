@@ -1,3 +1,4 @@
+import { registerRateLimits } from './adapters/in/http/rateLimit.js';
 import { registerNodeHistoryRoutes } from "./adapters/in/http/nodeHistoryRoutes.js";
 import { registerCustomerRoutes } from "./adapters/in/http/customerRoutes.js";
 import { registerAccess } from "./adapters/in/http/management/access.js";
@@ -48,6 +49,7 @@ import { registerNodeRoutes } from "./adapters/in/http/nodeRoutes.js";
 import { SocketTelemetryBroadcaster } from "./adapters/in/ws/SocketTelemetryBroadcaster.js";
 
 const app = Fastify({ logger: true });
+registerRateLimits(app);
 
 const pool = new Pool({ connectionString: requireEnv("DATABASE_URL") });
 
