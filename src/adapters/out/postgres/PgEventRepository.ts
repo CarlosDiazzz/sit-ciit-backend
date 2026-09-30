@@ -58,10 +58,19 @@ export class PgEventRepository implements EventRepository {
     // details es un objeto plano: pg lo serializa a JSON automáticamente
     // al insertarlo en una columna jsonb.
     const { rows } = await this.pool.query<{ id: string }>(
-      `INSERT INTO events (msg_id, unit_id, node_id, kind, severity, ts, details)
-       VALUES (NULL, $1, $2, $3, $4, $5, $6)
+      `INSERT INTO events (msg_id, unit_id, node_id, kind, severity, ts, details, gps_lat, gps_lon)
+       VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
-      [event.unitId, event.nodeId, event.kind, event.severity, event.ts, event.details ?? null]
+      [
+        event.unitId,
+        event.nodeId,
+        event.kind,
+        event.severity,
+        event.ts,
+        event.details ?? null,
+        event.gps?.lat ?? null,
+        event.gps?.lon ?? null,
+      ]
     );
     return rows[0]!.id;
   }

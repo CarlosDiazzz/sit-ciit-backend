@@ -36,4 +36,8 @@ export interface TelemetryRepository {
    *  tenemos para saber "dónde está" la unidad — no hay columna de
    *  posición cacheada en `units`. */
   findLatestPosition(unitId: string): Promise<UnitPosition | null>;
+  /** Última posición GPS real conocida de ESTE nodo en particular (no de
+   *  su unidad, que podría traer la del nodo hermano) — para saber dónde
+   *  estaba exactamente cuando dejó de latir (evaluateLiveness). */
+  findLatestPositionForNode(nodeId: string): Promise<UnitPosition | null>;
 }

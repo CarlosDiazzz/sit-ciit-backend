@@ -86,4 +86,18 @@ export class PgTelemetryRepository implements TelemetryRepository {
     if (!row) return null;
     return { lat: Number(row.gps_lat), lon: Number(row.gps_lon) };
   }
+
+  async findLatestPositionForNode(nodeId: string): Promise<UnitPosition | null> {
+    const { rows } = await this.pool.query<{ gps_lat: string; gps_lon: string }>(
+      `SELECT t.gps_lat, t.gps_lon
+         FROM telemetry t
+        WHERE t.node_id = $1 AND t.gps_lat IS NOT NULL AND t.gps_lon IS NOT NULL
+        ORDER BY t.ts DESC
+        LIMIT 1`,
+      [nodeId]
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { lat: Number(row.gps_lat), lon: Number(row.gps_lon) };
+  }
 }

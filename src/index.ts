@@ -68,6 +68,7 @@ const evaluateLiveness = makeEvaluateLiveness(
   eventRepository,
   telemetryBroadcaster,
   app.log,
+  telemetryRepository,
 );
 const ingestEvent = makeIngestEvent(eventRepository, telemetryBroadcaster);
 const evaluateUnitWeatherRisk = makeEvaluateUnitWeatherRisk(

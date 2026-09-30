@@ -7,7 +7,7 @@ import type { NodeRef } from "./TelemetryRepository.js";
  * lo que detecta un nodo), pero se guardan en la misma tabla `events`
  * porque para el centro de control son eventos como cualquier otro.
  */
-export type BackendEventKind = "source_failover" | "sensor_disagreement" | "weather_risk";
+export type BackendEventKind = "source_failover" | "sensor_disagreement" | "weather_risk" | "signal_lost";
 
 /** Todo lo que puede aparecer en la vista de Eventos: lo que detecta un
  *  nodo (contrato) más lo que genera el backend. */
@@ -26,6 +26,10 @@ export interface BackendEvent {
    *  dispararon), pero queda genérico por si otro evento de backend lo
    *  necesita después. */
   details?: Record<string, unknown>;
+  /** Última posición GPS real conocida — hoy solo la usa signal_lost
+   *  (dónde estaba el nodo cuando dejó de latir). source_failover y
+   *  sensor_disagreement no la necesitan. */
+  gps?: { lat: number; lon: number };
 }
 
 /**

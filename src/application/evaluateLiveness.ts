@@ -4,6 +4,7 @@ import type {
   NodeStateRepository,
 } from "../domain/ports/NodeStateRepository.js";
 import type { StatusBroadcaster } from "../domain/ports/TelemetryBroadcaster.js";
+import type { TelemetryRepository } from "../domain/ports/TelemetryRepository.js";
 
 /** Sin heartbeat en este tiempo, el nodo se da por caído (regla de
  *  dominio: los nodos laten cada 5 s, así que 15 s son tres latidos
@@ -29,7 +30,8 @@ export function makeEvaluateLiveness(
   nodes: NodeStateRepository,
   events: EventRepository,
   broadcaster: StatusBroadcaster,
-  logger: { info: (obj: object, msg: string) => void }
+  logger: { info: (obj: object, msg: string) => void },
+  telemetry: TelemetryRepository
 ): EvaluateLiveness {
   return async function evaluateLiveness() {
     const limite = new Date(Date.now() - OFFLINE_AFTER_MS);
@@ -54,6 +56,30 @@ export function makeEvaluateLiveness(
         unitId: nodo.unitCode,
         role: nodo.role,
         isOnline: false,
+      });
+
+      // Por cada nodo que se cae, no solo cuando cambia la fuente activa
+      // (eso es reassignActive/source_failover, más abajo, y no se toca):
+      // un backup que se cae sin causar failover antes no dejaba ningún
+      // rastro. findStaleOnlineNodes solo devuelve nodos que SEGUÍAN
+      // is_online=true, así que esto dispara una sola vez por caída, no
+      // en cada pasada del vigilante mientras sigue sin señal.
+      const posicion = await telemetry.findLatestPositionForNode(nodo.id);
+      await events.record({
+        unitId: nodo.unitId,
+        nodeId: nodo.id,
+        kind: "signal_lost",
+        severity: "warning",
+        ts: new Date(),
+        gps: posicion ?? undefined,
+      });
+      broadcaster.event({
+        unitId: nodo.unitCode,
+        nodeId: nodo.nodeCode,
+        kind: "signal_lost",
+        severity: "warning",
+        gps: posicion ?? undefined,
+        ts: Date.now(),
       });
     }
 
