@@ -62,7 +62,7 @@ try {
   registerAccess(app, pool);
   registerManagementRoutes(app, pool);
   registerNodeHistoryRoutes(app, pool);
-  registerAuthRoutes(app, makeLogin(new PgUserRepository(pool)));
+  registerAuthRoutes(app, makeLogin(new PgUserRepository(pool)), { send: async () => ({ sent: true }) });
   registerNodeRoutes(app, new PgNodeCredentialRepository(pool), pool);
   registerUnitRoutes(app, new PgUnitRepository(pool), pool);
   await app.listen({ host: "127.0.0.1", port: 4310 });

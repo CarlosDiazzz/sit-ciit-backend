@@ -68,7 +68,7 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
       actors[role] = rows[0];
     }
     registerAccess(app, pool);
-    registerCustomerRoutes(app, pool);
+    registerCustomerRoutes(app, pool, { send: async () => ({ sent: true }) });
     registerNodeHistoryRoutes(app, pool);
     const commands = new PgCommandRepository(pool);
     registerManagementRoutes(
@@ -80,7 +80,7 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
         { info: () => {} },
       ),
     );
-    registerAuthRoutes(app, makeLogin(new PgUserRepository(pool)));
+    registerAuthRoutes(app, makeLogin(new PgUserRepository(pool)), { send: async () => ({ sent: true }) });
     registerUnitRoutes(app, new PgUnitRepository(pool), pool);
     registerEventRoutes(app, new PgEventRepository(pool), pool);
     registerNodeRoutes(app, new PgNodeCredentialRepository(pool), pool);
