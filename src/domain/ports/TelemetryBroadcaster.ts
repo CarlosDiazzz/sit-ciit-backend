@@ -38,7 +38,9 @@ export interface ActiveNodePayload {
  *  ya guardado — se reemite para que el dashboard lo muestre sin recargar. */
 export interface EventPayload {
   unitId: string;
-  nodeId: string;
+  /** null en eventos de unidad (ej. weather_risk, source_failover): no
+   *  pertenecen a un solo nodo. */
+  nodeId: string | null;
   kind: string;
   severity: "info" | "warning" | "critical";
   value?: number;

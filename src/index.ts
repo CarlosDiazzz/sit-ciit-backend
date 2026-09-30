@@ -7,17 +7,22 @@ import { makeEvaluateLiveness } from "./application/evaluateLiveness.js";
 import { makeIngestHeartbeat } from "./application/ingestHeartbeat.js";
 import { makeIngestTelemetry } from "./application/ingestTelemetry.js";
 import { makeIngestEvent } from "./application/ingestEvent.js";
+import { makeEvaluateUnitWeatherRisk } from "./application/evaluateUnitWeatherRisk.js";
 import { PgTelemetryRepository } from "./adapters/out/postgres/PgTelemetryRepository.js";
 import { PgUnitRepository } from "./adapters/out/postgres/PgUnitRepository.js";
 import { PgNodeStateRepository } from "./adapters/out/postgres/PgNodeStateRepository.js";
 import { PgEventRepository } from "./adapters/out/postgres/PgEventRepository.js";
+import { PgWeatherRepository } from "./adapters/out/postgres/PgWeatherRepository.js";
+import { OpenMeteoWeatherClient } from "./adapters/out/weather/OpenMeteoWeatherClient.js";
 import { startTelemetrySubscriber } from "./adapters/in/mqtt/TelemetrySubscriber.js";
 import { attachHeartbeatSubscriber } from "./adapters/in/mqtt/HeartbeatSubscriber.js";
 import { attachEventSubscriber } from "./adapters/in/mqtt/EventSubscriber.js";
 import { startLivenessWatcher } from "./adapters/in/scheduler/livenessWatcher.js";
+import { startWeatherRiskWatcher } from "./adapters/in/scheduler/weatherRiskWatcher.js";
 import { registerTelemetryRoutes } from "./adapters/in/http/telemetryRoutes.js";
 import { registerUnitRoutes } from "./adapters/in/http/unitRoutes.js";
 import { registerEventRoutes } from "./adapters/in/http/eventRoutes.js";
+import { registerWeatherRoutes } from "./adapters/in/http/weatherRoutes.js";
 import { SocketTelemetryBroadcaster } from "./adapters/in/ws/SocketTelemetryBroadcaster.js";
 
 const app = Fastify({ logger: true });
@@ -28,6 +33,8 @@ const telemetryRepository = new PgTelemetryRepository(pool);
 const unitRepository = new PgUnitRepository(pool);
 const nodeStateRepository = new PgNodeStateRepository(pool);
 const eventRepository = new PgEventRepository(pool);
+const weatherRepository = new PgWeatherRepository(pool);
+const weatherClient = new OpenMeteoWeatherClient();
 const telemetryBroadcaster = new SocketTelemetryBroadcaster(app.server);
 const ingestTelemetry = makeIngestTelemetry(telemetryRepository, telemetryBroadcaster);
 const ingestHeartbeat = makeIngestHeartbeat(
@@ -43,6 +50,15 @@ const evaluateLiveness = makeEvaluateLiveness(
   app.log
 );
 const ingestEvent = makeIngestEvent(eventRepository, telemetryBroadcaster);
+const evaluateUnitWeatherRisk = makeEvaluateUnitWeatherRisk(
+  unitRepository,
+  telemetryRepository,
+  weatherClient,
+  weatherRepository,
+  eventRepository,
+  telemetryBroadcaster,
+  app.log
+);
 
 const mqttClient = startTelemetrySubscriber(
   {
@@ -65,11 +81,13 @@ await app.register(cors, { origin: true });
 attachHeartbeatSubscriber(mqttClient, ingestHeartbeat, app.log);
 attachEventSubscriber(mqttClient, ingestEvent, app.log);
 const livenessTimer = startLivenessWatcher(evaluateLiveness, app.log);
+const weatherRiskTimer = startWeatherRiskWatcher(evaluateUnitWeatherRisk, app.log);
 
 app.get("/health", async () => ({ status: "ok" }));
 registerTelemetryRoutes(app, pool);
 registerUnitRoutes(app, unitRepository);
 registerEventRoutes(app, eventRepository);
+registerWeatherRoutes(app, unitRepository, weatherRepository);
 
 const port = Number(process.env.PORT ?? 3000);
 
@@ -81,6 +99,7 @@ app.listen({ port, host: "0.0.0.0" }).catch((err) => {
 async function shutdown() {
   app.log.info("apagando...");
   clearInterval(livenessTimer);
+  clearInterval(weatherRiskTimer);
   mqttClient.end(true);
   await pool.end();
   await app.close();

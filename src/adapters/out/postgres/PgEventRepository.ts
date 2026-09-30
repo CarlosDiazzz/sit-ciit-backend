@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 
 import type {
   BackendEvent,
+  BackendEventKind,
   DeviceEventToRecord,
   EventListItem,
   EventRepository,
@@ -22,7 +23,11 @@ interface EventRow {
   received_at: Date;
   acknowledged_at: Date | null;
   acknowledged_by: string | null;
+  details: Record<string, unknown> | null;
 }
+
+const EVENT_COLUMNS = `id, unit_id, node_id, kind, severity, value, threshold,
+              gps_lat, gps_lon, ts, received_at, acknowledged_at, acknowledged_by, details`;
 
 function toListItem(r: EventRow): EventListItem {
   return {
@@ -40,6 +45,7 @@ function toListItem(r: EventRow): EventListItem {
     receivedAt: r.received_at,
     acknowledgedAt: r.acknowledged_at,
     acknowledgedBy: r.acknowledged_by,
+    details: r.details,
   };
 }
 
@@ -49,11 +55,13 @@ export class PgEventRepository implements EventRepository {
   async record(event: BackendEvent): Promise<string> {
     // msg_id queda NULL: estos eventos los genera el backend, no llegan
     // por MQTT, así que no hay msgId del dispositivo que deduplicar.
+    // details es un objeto plano: pg lo serializa a JSON automáticamente
+    // al insertarlo en una columna jsonb.
     const { rows } = await this.pool.query<{ id: string }>(
-      `INSERT INTO events (msg_id, unit_id, node_id, kind, severity, ts)
-       VALUES (NULL, $1, $2, $3, $4, $5)
+      `INSERT INTO events (msg_id, unit_id, node_id, kind, severity, ts, details)
+       VALUES (NULL, $1, $2, $3, $4, $5, $6)
        RETURNING id`,
-      [event.unitId, event.nodeId, event.kind, event.severity, event.ts]
+      [event.unitId, event.nodeId, event.kind, event.severity, event.ts, event.details ?? null]
     );
     return rows[0]!.id;
   }
@@ -102,14 +110,26 @@ export class PgEventRepository implements EventRepository {
 
   async listRecent(limit: number): Promise<EventListItem[]> {
     const { rows } = await this.pool.query<EventRow>(
-      `SELECT id, unit_id, node_id, kind, severity, value, threshold,
-              gps_lat, gps_lon, ts, received_at, acknowledged_at, acknowledged_by
+      `SELECT ${EVENT_COLUMNS}
          FROM events
         ORDER BY ts DESC
         LIMIT $1`,
       [limit]
     );
     return rows.map(toListItem);
+  }
+
+  async findLatestByKind(unitId: string, kind: BackendEventKind): Promise<EventListItem | null> {
+    const { rows } = await this.pool.query<EventRow>(
+      `SELECT ${EVENT_COLUMNS}
+         FROM events
+        WHERE unit_id = $1 AND kind = $2
+        ORDER BY ts DESC
+        LIMIT 1`,
+      [unitId, kind]
+    );
+    const row = rows[0];
+    return row ? toListItem(row) : null;
   }
 
   async acknowledge(eventId: string, userId: string): Promise<boolean> {

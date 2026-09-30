@@ -7,7 +7,7 @@ import type { NodeRef } from "./TelemetryRepository.js";
  * lo que detecta un nodo), pero se guardan en la misma tabla `events`
  * porque para el centro de control son eventos como cualquier otro.
  */
-export type BackendEventKind = "source_failover" | "sensor_disagreement";
+export type BackendEventKind = "source_failover" | "sensor_disagreement" | "weather_risk";
 
 /** Todo lo que puede aparecer en la vista de Eventos: lo que detecta un
  *  nodo (contrato) más lo que genera el backend. */
@@ -16,11 +16,16 @@ export type AnyEventKind = EventKind | BackendEventKind;
 export interface BackendEvent {
   unitId: string;
   /** NULL en eventos de unidad: comparan primary contra backup, no
-   *  pertenecen a un solo nodo. */
+   *  pertenecen a un solo nodo (o, en weather_risk, no aplica un nodo). */
   nodeId: string | null;
   kind: BackendEventKind;
   severity: EventSeverity;
   ts: Date;
+  /** Detalle estructurado que no cabe en un solo value/threshold — hoy
+   *  solo lo usa weather_risk (temperatura, humedad, lluvia y qué reglas
+   *  dispararon), pero queda genérico por si otro evento de backend lo
+   *  necesita después. */
+  details?: Record<string, unknown>;
 }
 
 /**
@@ -57,11 +62,18 @@ export interface EventListItem {
   receivedAt: Date;
   acknowledgedAt: Date | null;
   acknowledgedBy: string | null;
+  details: Record<string, unknown> | null;
 }
 
 export interface EventRepository {
   /** Devuelve el id del evento guardado. */
   record(event: BackendEvent): Promise<string>;
+  /** Último evento de este tipo registrado para la unidad, o null si nunca
+   *  hubo uno. Se usa para detectar transiciones (ej. de "sin riesgo" a
+   *  "warning") sin depender de una variable en memoria que se perdería al
+   *  reiniciar el proceso — mismo principio que evaluateLiveness siempre
+   *  lee el estado persistido. */
+  findLatestByKind(unitId: string, kind: BackendEventKind): Promise<EventListItem | null>;
   /** false en `inserted` si msgId ya se había procesado (reintento QoS1). */
   recordDeviceEvent(event: DeviceEventToRecord): Promise<{ inserted: boolean }>;
   listRecent(limit: number): Promise<EventListItem[]>;

@@ -5,12 +5,14 @@ import type {
   UnitRepository,
   UnitState,
 } from "../../../domain/ports/UnitRepository.js";
+import type { CargoCategory } from "../../../domain/riskThresholds.js";
 
 interface UnitRow {
   id: string;
   unit_code: string;
   label: string | null;
   active_node_id: string | null;
+  cargo_category: UnitState["cargoCategory"];
 }
 
 interface NodeRow {
@@ -32,7 +34,7 @@ export class PgUnitRepository implements UnitRepository {
 
   async listAll(): Promise<UnitState[]> {
     const { rows: unitRows } = await this.pool.query<UnitRow>(
-      `SELECT id, unit_code, label, active_node_id
+      `SELECT id, unit_code, label, active_node_id, cargo_category
          FROM units
         ORDER BY unit_code`
     );
@@ -82,7 +84,16 @@ export class PgUnitRepository implements UnitRepository {
       unitCode: u.unit_code,
       label: u.label,
       activeNodeId: u.active_node_id,
+      cargoCategory: u.cargo_category,
       nodes: byUnit.get(u.id) ?? [],
     }));
+  }
+
+  async setCargoCategory(unitId: string, category: CargoCategory): Promise<boolean> {
+    const { rowCount } = await this.pool.query(
+      `UPDATE units SET cargo_category = $2 WHERE id = $1`,
+      [unitId, category]
+    );
+    return (rowCount ?? 0) > 0;
   }
 }

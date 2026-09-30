@@ -24,6 +24,16 @@ export interface SaveTelemetryResult {
   inserted: boolean;
 }
 
+export interface UnitPosition {
+  lat: number;
+  lon: number;
+}
+
 export interface TelemetryRepository {
   save(reading: TelemetryReading): Promise<SaveTelemetryResult>;
+  /** Última posición GPS real conocida de la unidad (de cualquiera de sus
+   *  nodos), o null si todavía no llegó ninguna con GPS. Es lo único que
+   *  tenemos para saber "dónde está" la unidad — no hay columna de
+   *  posición cacheada en `units`. */
+  findLatestPosition(unitId: string): Promise<UnitPosition | null>;
 }

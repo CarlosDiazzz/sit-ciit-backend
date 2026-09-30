@@ -4,6 +4,7 @@ import type {
   SaveTelemetryResult,
   TelemetryReading,
   TelemetryRepository,
+  UnitPosition,
 } from "../../../domain/ports/TelemetryRepository.js";
 import { ensureNode } from "./ensureNode.js";
 
@@ -65,5 +66,20 @@ export class PgTelemetryRepository implements TelemetryRepository {
     } finally {
       client.release();
     }
+  }
+
+  async findLatestPosition(unitId: string): Promise<UnitPosition | null> {
+    const { rows } = await this.pool.query<{ gps_lat: string; gps_lon: string }>(
+      `SELECT t.gps_lat, t.gps_lon
+         FROM telemetry t
+         JOIN nodes n ON n.id = t.node_id
+        WHERE n.unit_id = $1 AND t.gps_lat IS NOT NULL AND t.gps_lon IS NOT NULL
+        ORDER BY t.ts DESC
+        LIMIT 1`,
+      [unitId]
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { lat: Number(row.gps_lat), lon: Number(row.gps_lon) };
   }
 }
