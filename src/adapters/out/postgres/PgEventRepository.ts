@@ -5,6 +5,7 @@ import type {
   BackendEventKind,
   DeviceEventToRecord,
   EventListItem,
+  EventVerdict,
   EventRepository,
 } from "../../../domain/ports/EventRepository.js";
 import { findNodeId } from "./findNodeId.js";
@@ -25,14 +26,19 @@ interface EventRow {
   received_at: Date;
   acknowledged_at: Date | null;
   acknowledged_by: string | null;
+  verdict: EventVerdict | null;
+  verdict_note: string | null;
   details: Record<string, unknown> | null;
 }
 
 const EVENT_COLUMNS = `id, unit_id, node_id, kind, severity, value, threshold,
-              gps_lat, gps_lon, ts, received_at, acknowledged_at, acknowledged_by, details`;
+              gps_lat, gps_lon, ts, received_at, acknowledged_at, acknowledged_by, details,
+              verdict, verdict_note`;
 
 function toListItem(r: EventRow): EventListItem {
   return {
+    verdict: r.verdict,
+    verdictNote: r.verdict_note,
     id: r.id,
     unitId: r.unit_id,
     nodeId: r.node_id,
@@ -160,6 +166,27 @@ export class PgEventRepository implements EventRepository {
       `UPDATE events SET acknowledged_at = now(), acknowledged_by = $2
         WHERE id = $1 AND acknowledged_at IS NULL`,
       [eventId, userId]
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  async setVerdict(
+    eventId: string,
+    userId: string,
+    verdict: EventVerdict,
+    note: string | null
+  ): Promise<boolean> {
+    // Sin la condicion de "solo si esta vacio" que tiene acknowledge:
+    // un operador que se equivoca debe poder corregir su juicio en vez
+    // de dejar una etiqueta falsa en el dataset. Se marca tambien como
+    // revisado, porque dar un veredicto implica haberlo visto.
+    const { rowCount } = await this.pool.query(
+      `UPDATE events
+          SET verdict = $3, verdict_note = $4,
+              acknowledged_at = COALESCE(acknowledged_at, now()),
+              acknowledged_by = COALESCE(acknowledged_by, $2)
+        WHERE id = $1`,
+      [eventId, userId, verdict, note]
     );
     return (rowCount ?? 0) > 0;
   }

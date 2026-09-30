@@ -52,6 +52,9 @@ export interface DeviceEventToRecord {
 /** Fila tal cual se le devuelve al dashboard por REST — unitId/nodeId son
  *  UUID aquí (a diferencia del payload de socket, que usa los códigos del
  *  contrato), igual que ya hace GET /units con activeNodeId. */
+/** Si la deteccion acerto, segun quien conoce el contexto. */
+export type EventVerdict = "confirmed" | "false_alarm" | "unclear";
+
 export interface EventListItem {
   id: string;
   unitId: string;
@@ -72,6 +75,10 @@ export interface EventListItem {
   receivedAt: Date;
   acknowledgedAt: Date | null;
   acknowledgedBy: string | null;
+  /** Juicio del operador sobre si la deteccion acerto. NULL mientras
+   *  nadie lo haya dicho: no se infiere una etiqueta que no se dio. */
+  verdict: EventVerdict | null;
+  verdictNote: string | null;
   details: Record<string, unknown> | null;
 }
 
@@ -89,4 +96,13 @@ export interface EventRepository {
   listRecent(limit: number): Promise<EventListItem[]>;
   /** false si el evento no existe (404 en la ruta). */
   acknowledge(eventId: string, userId: string): Promise<boolean>;
+
+  /** Registra el veredicto. Puede corregirse: un operador que se
+   *  equivoca debe poder rectificar sin dejar un dato falso. */
+  setVerdict(
+    eventId: string,
+    userId: string,
+    verdict: EventVerdict,
+    note: string | null,
+  ): Promise<boolean>;
 }

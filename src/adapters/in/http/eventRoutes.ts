@@ -98,8 +98,49 @@ export function registerEventRoutes(
       ts: e.ts.toISOString(),
       receivedAt: e.receivedAt.toISOString(),
       acknowledgedAt: e.acknowledgedAt ? e.acknowledgedAt.toISOString() : null,
+      verdict: e.verdict,
+      verdictNote: e.verdictNote,
     }));
   });
+
+
+  /** Veredicto del operador: si la deteccion acerto.
+   *
+   * Distinto de /ack, que solo marca "visto". Aqui se registra el juicio
+   * de quien conoce el contexto, y cada uno es un ejemplo etiquetado
+   * para afinar umbrales o entrenar un modelo mas adelante.
+   */
+  app.post(
+    "/events/:id/verdict",
+    { preHandler: requireRole("admin", "control_center", "operator") },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as { verdict?: string; note?: string } | undefined;
+      const verdict = body?.verdict;
+
+      if (verdict !== "confirmed" && verdict !== "false_alarm" && verdict !== "unclear") {
+        return reply.code(400).send({
+          error: "veredicto invalido",
+          message: "Debe ser confirmed, false_alarm o unclear.",
+        });
+      }
+
+      const nota = typeof body?.note === "string" && body.note.trim() !== ""
+        ? body.note.trim().slice(0, 500)
+        : null;
+
+      const ok = await events.setVerdict(id, request.authUser!.id, verdict, nota);
+      if (!ok) return reply.code(404).send({ error: "evento no encontrado" });
+
+      await new ManagementStore(pool).transaction((db) =>
+        audit(db, request.actor, "events", id, "verdict", null, {
+          verdict,
+          note: nota,
+        }),
+      );
+      return { verdict, note: nota };
+    },
+  );
 
   app.post(
     "/events/:id/ack",
