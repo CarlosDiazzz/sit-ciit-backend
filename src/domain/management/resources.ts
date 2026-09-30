@@ -27,6 +27,7 @@ export interface Field {
   min?: number;
   max?: number;
   roles?: Role[];
+  generated?: boolean;
 }
 export interface Resource {
   table: string;
@@ -312,7 +313,8 @@ export const resources: Record<string, Resource> = {
     "shipments",
     "Envíos",
     [
-      ...identity,
+      { ...text("code", "Número de guía (generado automáticamente)"), generated: true },
+      text("name", "Nombre", true),
       ref("company_id", "Cliente", "companies", true),
       ref("cargo_type_id", "Tipo de carga", "cargo-types", true),
       ref("origin_id", "Origen", "locations", true),
@@ -467,6 +469,7 @@ export const profileKeys = [
 export function bodySchema(resource: Resource, partial = false) {
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const field of resource.fields) {
+    if (field.generated) continue;
     let rule: z.ZodTypeAny;
     if (field.type === "number") {
       let n = z.number().finite();

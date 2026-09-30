@@ -200,7 +200,22 @@ columnas. Las versiones de ruta y configuración se guardan como hechos históri
 al iniciar un viaje o aplicar un perfil, conservando el modelo actual de comandos
 con ACK y la ingesta original de telemetría.
 
-## Historial de conectividad
+## Guías y portal de clientes
+
+`0015_shipment_guides.sql` establece una secuencia atómica y un valor por defecto
+para `shipments.code`: `SITCIIT-año-folio`. El CRUD genera la guía al crear el
+embarque y rechaza escribir o modificar ese campo; los códigos existentes se
+conservan. `POST /customer/tracking` exige rol cliente y compañía activa, resuelve
+el embarque por código y compañía y publica únicamente GPS, fechas y avisos
+sanitizados. El intervalo se limita a la salida y cierre reales del último tramo
+iniciado. Sin viaje iniciado no se publican posiciones. Las guías ajenas y las
+inexistentes producen el mismo 404. `GET /customer/session` valida la cuenta actual.
+
+El portal usa polling; no se abren las rutas ni sockets de telemetría operativa
+cruda a clientes. `unitIds` devuelve sólo las unidades de viajes en tránsito con
+embarques activos de la compañía del cliente.
+
+## Eventos de conectividad
 
 `0011_add_signal_lost_event.sql` y `0012_signal_recovered.sql` permiten guardar
 las pérdidas detectadas por ausencia de heartbeat y las recuperaciones observadas

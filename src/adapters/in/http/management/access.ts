@@ -36,7 +36,19 @@ export async function unitIds(
   actor: Actor,
 ): Promise<string[] | null> {
   if (["admin", "control_center", "auditor"].includes(actor.role)) return null;
-  if (actor.role === "cliente") return [];
+  if (actor.role === "cliente") {
+    if (!actor.company_id) return [];
+    const { rows } = await db.query(
+      `SELECT DISTINCT t.unit_id FROM shipments s
+       JOIN companies c ON c.id=s.company_id AND c.active
+       JOIN trip_shipments ts ON ts.shipment_id=s.id AND ts.active
+       JOIN trips t ON t.id=ts.trip_id AND t.active
+       WHERE s.company_id=$1 AND s.active AND s.status='in_transit'
+         AND t.status='in_transit' AND t.actual_departure<=now()`,
+      [actor.company_id],
+    );
+    return rows.map((r) => r.unit_id);
+  }
   if (actor.role === "technician") {
     const { rows } = await db.query(
       `SELECT DISTINCT n.unit_id FROM maintenance m JOIN nodes n ON n.id=m.node_id WHERE m.technician_id=$1 AND m.active`,
@@ -87,7 +99,8 @@ export function registerAccess(app: FastifyInstance, pool: Pool) {
         .send({ message: "Inicia sesión con una cuenta activa." });
     req.actor = actor;
     req.authUser = { id: actor.id, email: actor.email, role: actor.role };
-    if (actor.role === "cliente" && !req.url.startsWith("/management/"))
+    if (actor.role === "cliente" && !req.url.startsWith("/management/") &&
+        !["/customer/session", "/customer/tracking"].includes(req.routeOptions.url ?? ""))
       return reply.code(403).send({ message: "Usa el portal de tus envíos." });
     const url = req.routeOptions.url ?? "";
     const params = req.params as Record<string, string>;

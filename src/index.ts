@@ -1,4 +1,5 @@
 import { registerNodeHistoryRoutes } from "./adapters/in/http/nodeHistoryRoutes.js";
+import { registerCustomerRoutes } from "./adapters/in/http/customerRoutes.js";
 import { registerAccess } from "./adapters/in/http/management/access.js";
 import { registerManagementRoutes } from "./adapters/in/http/management/routes.js";
 import "dotenv/config";
@@ -138,6 +139,7 @@ const weatherRiskTimer = startWeatherRiskWatcher(
 
 app.get("/health", async () => ({ status: "ok" }));
 registerAccess(app, pool);
+registerCustomerRoutes(app, pool);
 registerManagementRoutes(app, pool, issueCommand);
 registerTelemetryRoutes(app, pool);
 registerNodeHistoryRoutes(app, pool);

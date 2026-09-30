@@ -2,6 +2,8 @@ import { makeIngestHeartbeat } from "../src/application/ingestHeartbeat.js";
 import { PgNodeStateRepository } from "../src/adapters/out/postgres/PgNodeStateRepository.js";
 import { heartbeatMessageSchema } from "../src/adapters/in/mqtt/messageSchemas.js";
 import { registerNodeHistoryRoutes } from "../src/adapters/in/http/nodeHistoryRoutes.js";
+import { registerCustomerRoutes } from "../src/adapters/in/http/customerRoutes.js";
+import { unitIds } from "../src/adapters/in/http/management/access.js";
 import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -66,6 +68,7 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
       actors[role] = rows[0];
     }
     registerAccess(app, pool);
+    registerCustomerRoutes(app, pool);
     registerNodeHistoryRoutes(app, pool);
     const commands = new PgCommandRepository(pool);
     registerManagementRoutes(
@@ -210,7 +213,6 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
       company_id: company.id,
     });
     const shipment = await create("shipments", {
-      code: "shipment",
       name: "Envío",
       company_id: company.id,
       cargo_type_id: cargo.id,
@@ -220,7 +222,6 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
       status: "ready",
     });
     const foreignShipment = await create("shipments", {
-      code: "foreign-shipment",
       name: "Ajeno",
       company_id: foreignCompany.id,
       cargo_type_id: cargo.id,
@@ -602,6 +603,50 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
       async () => {
         const started = await patch("trips", trip.id, { status: "in_transit" });
         assert.ok(started.actual_departure);
+        {
+          assert.match(shipment.code, /^SITCIIT-\d{4}-\d{6,}$/);
+          assert.notEqual(shipment.code, foreignShipment.code);
+          const generated=await Promise.all(Array.from({length:4},()=>create("shipments",{name:"Concurrencia de folios",company_id:company.id,cargo_type_id:cargo.id,origin_id:origin.id,destination_id:destination.id,weight_kg:1,status:"draft"})));
+          assert.equal(new Set(generated.map(s=>s.code)).size,4);
+          assert.equal((await req("PATCH", `/management/shipments/${shipment.id}`, {code:"SITCIIT-2026-999999"})).statusCode,400);
+          const manual={name:"Manual",code:"SITCIIT-2026-999999",company_id:company.id,cargo_type_id:cargo.id,origin_id:origin.id,destination_id:destination.id,weight_kg:1,status:"draft"};
+          assert.equal((await req("POST","/management/shipments",manual)).statusCode,400);
+          const foreign=await create("users",{email:"foreign-client@test.invalid",password:"test-password-123",first_name:"Cliente",last_name:"Ajeno",role:"cliente",company_id:foreignCompany.id});
+          actors.foreignCustomer={id:foreign.id,email:foreign.email,role:"cliente"};
+          const login=await app.inject({method:"POST",url:"/auth/login",payload:{email:actors.cliente.email,password:"test-password-123"}});
+          assert.equal(login.statusCode,200);
+          const session=await app.inject({url:"/customer/session",headers:{authorization:`Bearer ${login.json().token}`}});
+          assert.deepEqual(session.json(),{role:"cliente",companyName:(await pool.query("SELECT name FROM companies WHERE id=$1",[company.id])).rows[0].name});
+          assert.equal((await app.inject({method:"POST",url:"/customer/tracking",payload:{reference:shipment.code}})).statusCode,401);
+          const denied=await req("POST","/customer/tracking",{reference:shipment.code},"foreignCustomer");
+          const missing=await req("POST","/customer/tracking",{reference:"SITCIIT-2026-999999"},"foreignCustomer");
+          assert.equal(denied.statusCode,404);assert.equal(denied.body,missing.body);
+          assert.deepEqual(await unitIds(pool,{...actors.cliente,company_id:company.id}),[unit.id]);
+          assert.deepEqual(await unitIds(pool,{...actors.foreignCustomer,company_id:foreignCompany.id}),[]);
+          assert.deepEqual(await unitIds(pool,{...actors.cliente,company_id:null}),[]);
+          assert.equal((await req("GET","/units",undefined,"cliente")).statusCode,403);
+          assert.equal((await req("POST","/customer/tracking",{reference:foreignShipment.code},"cliente")).statusCode,404);
+          assert.equal((await req("POST","/customer/tracking",{reference:shipment.code},"cliente")).json().location,null);
+          // Fixtures exclusivamente dentro del esquema PostgreSQL aislado.
+          await pool.query(`INSERT INTO telemetry(msg_id,node_id,seq,ts,gps_lat,gps_lon,gps_accuracy_m) VALUES
+            ($1,$2,1,$3::timestamptz-interval '1 day',50,50,10),($4,$2,2,clock_timestamp(),17.123,-95.234,12),
+            ($5,$2,3,clock_timestamp()+interval '1 day',60,60,10)`,[randomUUID(),node.id,started.actual_departure,randomUUID(),randomUUID()]);
+          const result=await req("POST","/customer/tracking",{reference:shipment.code},"cliente");
+          assert.equal(result.statusCode,200);assert.equal(result.json().location.lat,17.123);assert.equal(result.json().eta,null);
+          for(const value of [node.id,node.node_code,unit.id,actors.operator.email])assert.ok(!result.body.includes(value));
+          const eventId=randomUUID();
+          await pool.query("INSERT INTO events(id,unit_id,node_id,kind,severity,value,ts) VALUES($1,$2,$3,'impact','critical',42,clock_timestamp())",[eventId,unit.id,node.id]);
+          const withEvent=(await req("POST","/customer/tracking",{reference:shipment.code},"cliente")).json();
+          assert.equal(withEvent.events[0].title,"Movimiento registrado");
+          assert.deepEqual(Object.keys(withEvent.events[0]).sort(),["at","detail","id","title"]);
+          assert.ok(!JSON.stringify(withEvent).includes(eventId));
+          await pool.query("DELETE FROM events WHERE id=$1",[eventId]);
+          await pool.query("UPDATE companies SET active=false WHERE id=$1",[company.id]);
+          assert.equal((await req("POST","/customer/tracking",{reference:shipment.code},"cliente")).statusCode,403);
+          assert.deepEqual(await unitIds(pool,{...actors.cliente,company_id:company.id}),[]);
+          await pool.query("UPDATE companies SET active=true WHERE id=$1",[company.id]);
+          await pool.query("DELETE FROM telemetry WHERE node_id=$1",[node.id]);
+        }
         assert.ok(started.route_snapshot);
         assert.equal(started.route_snapshot.version, 2);
         assert.equal(
@@ -628,6 +673,10 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
           route_id: route.id,
         });
         assert.ok(finished.actual_arrival);
+        assert.deepEqual(await unitIds(pool,{...actors.cliente,company_id:company.id}),[]);
+        await pool.query(`INSERT INTO telemetry(msg_id,node_id,seq,ts,gps_lat,gps_lon) VALUES($1,$2,1,$3::timestamptz+interval '1 second',51,51)`,[randomUUID(),node.id,finished.actual_arrival]);
+        assert.equal((await req("POST","/customer/tracking",{reference:shipment.code},"cliente")).json().location,null);
+        await pool.query("DELETE FROM telemetry WHERE node_id=$1",[node.id]);
         assert.equal(finished.route_snapshot.version, 2);
         assert.equal(
           (await req("GET", `/management/shipments/${shipment.id}`)).json()
@@ -708,7 +757,6 @@ test("CRUDs logísticos, estados, aislamiento, cuentas y auditoría en un esquem
       "envíos multimodales conservan el envío listo entre tramos",
       async () => {
         const s = await create("shipments", {
-          code: "multimodal",
           name: "Multimodal",
           company_id: company.id,
           cargo_type_id: cargo.id,
